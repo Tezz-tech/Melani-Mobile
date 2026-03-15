@@ -473,7 +473,6 @@ function ForgotPasswordSheet({ visible, onClose }) {
       useNativeDriver: true,
     }).start();
     if (!visible) {
-      // Reset state when sheet closes
       setFpEmail("");
       setFpSent(false);
       setFpError("");
@@ -488,7 +487,6 @@ function ForgotPasswordSheet({ visible, onClose }) {
     setFpLoading(true);
     setFpError("");
     try {
-      // ── REAL API CALL ──
       await AuthAPI.forgotPassword(fpEmail);
       setFpSent(true);
     } catch (err) {
@@ -662,6 +660,46 @@ const fp = StyleSheet.create({
   doneBtnText: { color: "#0F0500", fontSize: 15, fontWeight: "800" },
 });
 
+// ── General error banner ──────────────────────────────────────
+function ErrorBanner({ message }) {
+  if (!message) return null;
+  return (
+    <FadeSlide style={{ marginBottom: 14 }}>
+      <View style={eb.box}>
+        <Text style={eb.icon}>!</Text>
+        <Text style={eb.text}>{message}</Text>
+      </View>
+    </FadeSlide>
+  );
+}
+const eb = StyleSheet.create({
+  box: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "rgba(224,92,58,0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(224,92,58,0.35)",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  icon: {
+    color: C.error,
+    fontSize: 15,
+    fontWeight: "900",
+    width: 18,
+    textAlign: "center",
+  },
+  text: {
+    color: C.error,
+    fontSize: 13,
+    fontWeight: "500",
+    flex: 1,
+    lineHeight: 19,
+  },
+});
+
 // ─────────────────────────────────────────────────────────────
 //  SCREEN
 // ─────────────────────────────────────────────────────────────
@@ -675,7 +713,7 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
 
-  // Animated scan line inside the card (unchanged from original)
+  // Animated scan line
   const scanLine = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.loop(
@@ -713,20 +751,28 @@ export default function LoginScreen() {
     setLoading(true);
     setErrors({});
     try {
-      // ── REAL API CALL ──
       await login({ email: identifier, password });
-      // login() stores tokens + sets user in AuthContext
       navigation.reset({ index: 0, routes: [{ name: "Main" }] });
     } catch (err) {
-      if (err.status === 401) {
+      // ✅ FIX: err.status is always undefined from fetch/axios.
+      //         Resolve the status code from whichever shape your API client uses.
+      const code = err.statusCode ?? err.status ?? err.response?.status;
+
+      if (code === 401) {
         setErrors({ password: "Incorrect email or password." });
-      } else if (err.status === 0) {
+      } else if (!code || code === 0) {
+        // No response at all — network is down
         setErrors({
-          identifier: "No internet connection. Check your network.",
+          general: "No internet connection. Check your network and try again.",
+        });
+      } else if (code === 429) {
+        setErrors({
+          general: "Too many attempts. Please wait a moment and try again.",
         });
       } else {
+        // ✅ FIX: use a dedicated general slot so field errors stay clean
         setErrors({
-          password: err.message || "Login failed. Please try again.",
+          general: err.message || "Login failed. Please try again.",
         });
       }
     } finally {
@@ -752,10 +798,9 @@ export default function LoginScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Scan card with animated sweep line */}
+          {/* Scan card */}
           <FadeSlide delay={0} style={s.cardWrap}>
             <View style={s.card}>
-              {/* Corner brackets */}
               <View
                 style={[
                   s.corner,
@@ -804,11 +849,9 @@ export default function LoginScreen() {
                   },
                 ]}
               />
-              {/* Scan line sweep */}
               <Animated.View
                 style={[s.scanBar, { transform: [{ translateY: scanY }] }]}
               />
-              {/* Logo mark */}
               <View style={s.cardLogoRing}>
                 <Text style={s.cardLogoLetter}>M</Text>
               </View>
@@ -824,6 +867,9 @@ export default function LoginScreen() {
             </Text>
           </FadeSlide>
 
+          {/* ✅ General error banner — shown above fields, never steals a field slot */}
+          {errors.general && <ErrorBanner message={errors.general} />}
+
           {/* Fields */}
           <View style={{ marginBottom: 4 }}>
             <InputField
@@ -832,7 +878,7 @@ export default function LoginScreen() {
               value={identifier}
               onChangeText={(t) => {
                 setIdentifier(t);
-                setErrors((e) => ({ ...e, identifier: "" }));
+                setErrors((e) => ({ ...e, identifier: "", general: "" }));
               }}
               keyboardType="email-address"
               delay={300}
@@ -844,7 +890,7 @@ export default function LoginScreen() {
               value={password}
               onChangeText={(t) => {
                 setPassword(t);
-                setErrors((e) => ({ ...e, password: "" }));
+                setErrors((e) => ({ ...e, password: "", general: "" }));
               }}
               secureTextEntry
               delay={400}
@@ -852,7 +898,7 @@ export default function LoginScreen() {
             />
           </View>
 
-          {/* Forgot — now wires to real API via bottom sheet */}
+          {/* Forgot password */}
           <FadeSlide
             delay={470}
             style={{ alignItems: "flex-end", marginBottom: 20 }}
@@ -898,7 +944,7 @@ export default function LoginScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Forgot password sheet — rendered outside ScrollView so it sits on top */}
+      {/* Forgot password sheet — outside ScrollView so it overlays everything */}
       <ForgotPasswordSheet
         visible={showForgot}
         onClose={() => setShowForgot(false)}
@@ -910,7 +956,6 @@ export default function LoginScreen() {
 const s = StyleSheet.create({
   scroll: { paddingTop: 108, paddingHorizontal: 24 },
 
-  // Scan card
   cardWrap: { alignItems: "center", marginBottom: 30 },
   card: {
     width: 130,
@@ -965,7 +1010,6 @@ const s = StyleSheet.create({
     marginTop: 10,
   },
 
-  // Text
   title: {
     color: C.cream,
     fontSize: 30,

@@ -29,7 +29,7 @@ const SLIDES = [
     accent: '#C8860A',
     tag: 'MELANIN-FIRST',
     title: 'Built for\nYour Skin',
-    body: 'Most skincare AI was trained on lighter skin tones. Melanin Scan was built from the ground up for melanin-rich skin — nothing is adapted, everything is intentional.',
+    body: 'Most skincare AI was trained on lighter skin tones. Melani Scan was built from the ground up for melanin-rich skin — nothing is adapted, everything is intentional.',
     decorShape: 'hexagon',
   },
   {

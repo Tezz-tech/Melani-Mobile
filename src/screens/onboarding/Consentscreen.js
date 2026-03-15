@@ -169,7 +169,7 @@ function DisclaimerBox() {
         <Text style={db.title}>Not Medical Advice</Text>
       </View>
       <Text style={db.body}>
-        Melanin Scan provides cosmetic, observational skin analysis only. This is not a medical diagnosis and should not replace professional dermatological advice.
+        Melani Scan provides cosmetic, observational skin analysis only. This is not a medical diagnosis and should not replace professional dermatological advice.
       </Text>
     </FadeSlide>
   );

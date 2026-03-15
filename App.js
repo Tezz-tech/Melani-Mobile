@@ -1,5 +1,5 @@
 // App.js
-import React, { useEffect } from 'react';
+import React from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -8,7 +8,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 // ── Auth context ──────────────────────────────────────────────
 import { AuthProvider, useAuth } from './src/store/AuthContext';
 
-// ── Screens ──────────────────────────────────────────────────
+// ── Screens ───────────────────────────────────────────────────
 
 // Splash & Auth
 import SplashScreen    from './src/screens/SplashScreen';
@@ -23,10 +23,10 @@ import ConsentScreen      from './src/screens/onboarding/Consentscreen';
 import ProfileSetupScreen from './src/screens/onboarding/ProfileSetupScreen';
 
 // Main App Tabs
-import HomeScreen       from './src/screens/main/HomeScreen';
+import HomeScreen        from './src/screens/main/HomeScreen';
 import ScanHistoryScreen from './src/screens/main/ScanHistoryScreen';
-import RoutineScreen    from './src/screens/main/RoutineScreen';
-import ProfileScreen    from './src/screens/main/ProfileScreen';
+import RoutineScreen     from './src/screens/main/RoutineScreen';
+import ProfileScreen     from './src/screens/main/ProfileScreen';
 
 // Scan Flow
 import ScanCameraScreen     from './src/screens/scan/ScanCameraScreen';
@@ -35,8 +35,8 @@ import ScanResultsScreen    from './src/screens/scan/ScanResultsScreen';
 import ScanReportScreen     from './src/screens/scan/ScanReportScreen';
 
 // Subscription & Payments
-import SubscriptionScreen  from './src/screens/subscription/SubscriptionScreen';
-import PaymentScreen       from './src/screens/subscription/PaymentScreen';
+import SubscriptionScreen   from './src/screens/subscription/SubscriptionScreen';
+import PaymentScreen        from './src/screens/subscription/PaymentScreen';
 import PaymentSuccessScreen from './src/screens/subscription/PaymentSuccessScreen';
 
 // Settings & Account
@@ -51,7 +51,7 @@ import HelpScreen          from './src/screens/settings/HelpScreen';
 const Stack = createNativeStackNavigator();
 const Tab   = createBottomTabNavigator();
 
-// ── Loading screen shown while AuthContext restores session ───
+// ── Boot spinner — shown while AuthContext restores session ───
 function BootScreen() {
   return (
     <View style={styles.boot}>
@@ -60,7 +60,7 @@ function BootScreen() {
   );
 }
 
-// ── Main Bottom Tab Navigator ─────────────────────────────────
+// ── Bottom tab navigator (authenticated users only) ───────────
 function MainTabNavigator() {
   return (
     <Tab.Navigator
@@ -76,92 +76,82 @@ function MainTabNavigator() {
         },
         tabBarActiveTintColor:   '#C8860A',
         tabBarInactiveTintColor: 'rgba(245,222,179,0.4)',
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '600',
-          letterSpacing: 0.5,
-        },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '600', letterSpacing: 0.5 },
       }}
     >
-      <Tab.Screen name="Home"        component={HomeScreen}        options={{ tabBarLabel:'Home'    }} />
-      <Tab.Screen name="ScanHistory" component={ScanHistoryScreen} options={{ tabBarLabel:'History' }} />
-      <Tab.Screen name="Routine"     component={RoutineScreen}     options={{ tabBarLabel:'Routine' }} />
-      <Tab.Screen name="Profile"     component={ProfileScreen}     options={{ tabBarLabel:'Profile' }} />
+      <Tab.Screen name="Home"        component={HomeScreen}        options={{ tabBarLabel: 'Home'    }} />
+      <Tab.Screen name="ScanHistory" component={ScanHistoryScreen} options={{ tabBarLabel: 'History' }} />
+      <Tab.Screen name="Routine"     component={RoutineScreen}     options={{ tabBarLabel: 'Routine' }} />
+      <Tab.Screen name="Profile"     component={ProfileScreen}     options={{ tabBarLabel: 'Profile' }} />
     </Tab.Navigator>
   );
 }
 
-// ── Root navigator — reads auth state from context ────────────
+// ── Root navigator ────────────────────────────────────────────
 //
-//  isLoading = true  → show boot spinner (token check in progress)
-//  isAuthenticated   → go straight to Main (skips auth screens entirely)
-//  !isAuthenticated  → show auth stack
+//  isLoading = true   → BootScreen (restoring session from storage)
+//  isAuthenticated    → authenticated stack (Main + all app screens)
+//  !isAuthenticated   → unauthenticated stack (Splash → … → ProfileSetup)
 //
-//  React Navigation will automatically animate between the two
-//  navigator trees when isAuthenticated changes.
+//  React Navigation swaps the tree automatically when isAuthenticated
+//  changes. Never call navigation.navigate('Main') manually — the swap
+//  happens on its own when completeOnboarding() or login() fires.
 // ─────────────────────────────────────────────────────────────
 function RootNavigator() {
   const { isAuthenticated, isLoading } = useAuth();
 
-  // Still checking stored token — show spinner, don't flash screens
+  // Still hydrating stored token — show spinner only then
   if (isLoading) return <BootScreen />;
 
   return (
-    <Stack.Navigator
-      screenOptions={{ headerShown: false, animation: 'fade' }}
-    >
+    <Stack.Navigator screenOptions={{ headerShown: false, animation: 'fade' }}>
       {isAuthenticated ? (
         // ── AUTHENTICATED STACK ───────────────────────────────
         <>
-          {/* Main app entry point */}
-          <Stack.Screen name="Main" component={MainTabNavigator} options={{ animation:'fade' }} />
+          <Stack.Screen name="Main"           component={MainTabNavigator}     options={{ animation: 'fade'              }} />
 
-          {/* Scan Flow */}
-          <Stack.Screen name="ScanCamera"     component={ScanCameraScreen}     options={{ animation:'slide_from_bottom' }} />
-          <Stack.Screen name="ScanProcessing" component={ScanProcessingScreen} options={{ animation:'fade', gestureEnabled:false }} />
-          <Stack.Screen name="ScanResults"    component={ScanResultsScreen}    options={{ animation:'slide_from_right' }} />
-          <Stack.Screen name="ScanReport"     component={ScanReportScreen}     options={{ animation:'slide_from_right' }} />
+          {/* Scan flow */}
+          <Stack.Screen name="ScanCamera"     component={ScanCameraScreen}     options={{ animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="ScanProcessing" component={ScanProcessingScreen} options={{ animation: 'fade', gestureEnabled: false }} />
+          <Stack.Screen name="ScanResults"    component={ScanResultsScreen}    options={{ animation: 'slide_from_right'  }} />
+          <Stack.Screen name="ScanReport"     component={ScanReportScreen}     options={{ animation: 'slide_from_right'  }} />
 
-          {/* Subscription & Payments */}
-          <Stack.Screen name="Subscription"   component={SubscriptionScreen}   options={{ animation:'slide_from_bottom' }} />
-          <Stack.Screen name="Payment"        component={PaymentScreen}        options={{ animation:'slide_from_right' }} />
-          <Stack.Screen name="PaymentSuccess" component={PaymentSuccessScreen} options={{ animation:'fade', gestureEnabled:false }} />
+          {/* Subscription & payments */}
+          <Stack.Screen name="Subscription"   component={SubscriptionScreen}   options={{ animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="Payment"        component={PaymentScreen}        options={{ animation: 'slide_from_right'  }} />
+          <Stack.Screen name="PaymentSuccess" component={PaymentSuccessScreen} options={{ animation: 'fade', gestureEnabled: false }} />
 
-          {/* Settings & Account */}
-          <Stack.Screen name="Settings"       component={SettingsScreen}       options={{ animation:'slide_from_right' }} />
-          <Stack.Screen name="Notifications"  component={NotificationsScreen}  options={{ animation:'slide_from_right' }} />
-          <Stack.Screen name="Privacy"        component={PrivacyScreen}        options={{ animation:'slide_from_right' }} />
-          <Stack.Screen name="DeleteAccount"  component={DeleteAccountScreen}  options={{ animation:'slide_from_right' }} />
-          <Stack.Screen name="Help"           component={HelpScreen}           options={{ animation:'slide_from_right' }} />
-          <Tab.Screen name="Routine"     component={RoutineScreen}     options={{ tabBarLabel:'Routine' }} />
+          {/* Settings & account */}
+          <Stack.Screen name="Settings"       component={SettingsScreen}       options={{ animation: 'slide_from_right'  }} />
+          <Stack.Screen name="Notifications"  component={NotificationsScreen}  options={{ animation: 'slide_from_right'  }} />
+          <Stack.Screen name="Privacy"        component={PrivacyScreen}        options={{ animation: 'slide_from_right'  }} />
+          <Stack.Screen name="DeleteAccount"  component={DeleteAccountScreen}  options={{ animation: 'slide_from_right'  }} />
+          <Stack.Screen name="Help"           component={HelpScreen}           options={{ animation: 'slide_from_right'  }} />
+          {/* ✅ FIX: removed stray <Tab.Screen> that was inside a Stack.Navigator here */}
         </>
       ) : (
         // ── UNAUTHENTICATED STACK ─────────────────────────────
         <>
           <Stack.Screen name="Splash"       component={SplashScreen}       />
           <Stack.Screen name="Welcome"      component={WelcomeScreen}      />
-          <Stack.Screen name="Signup"       component={SignupScreen}       />
+          <Stack.Screen name="Signup"       component={SignupScreen}        />
           <Stack.Screen name="Login"        component={LoginScreen}        />
-          <Stack.Screen name="OTPVerify"    component={OTPVerifyScreen}    options={{ animation:'slide_from_right' }} />
+          <Stack.Screen name="OTPVerify"    component={OTPVerifyScreen}    options={{ animation: 'slide_from_right' }} />
 
-          {/* Onboarding — first-time users land here after OTP */}
-          <Stack.Screen name="Onboarding"   component={OnboardingScreen}   options={{ animation:'slide_from_right' }} />
-          <Stack.Screen name="Consent"      component={ConsentScreen}      options={{ animation:'slide_from_right' }} />
-          <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} options={{ animation:'slide_from_right' }} />
+          {/* Onboarding — after OTP, before entering the app */}
+          <Stack.Screen name="Onboarding"   component={OnboardingScreen}   options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="Consent"      component={ConsentScreen}      options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} options={{ animation: 'slide_from_right' }} />
         </>
       )}
     </Stack.Navigator>
   );
 }
 
-// ── Root app — AuthProvider must wrap NavigationContainer ─────
+// ── Root app ──────────────────────────────────────────────────
 //
-//  Order matters:
-//    <AuthProvider>           ← boots session check immediately
-//      <NavigationContainer>  ← must be inside so navigation.reset() works
-//        <RootNavigator />    ← reads context + decides which stack to show
-//      </NavigationContainer>
-//    </AuthProvider>
+//  AuthProvider must wrap NavigationContainer so navigation.reset()
+//  and navigation.navigate() work inside auth action callbacks.
 // ─────────────────────────────────────────────────────────────
 export default function App() {
   return (
