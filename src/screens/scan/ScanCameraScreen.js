@@ -11,16 +11,36 @@
 //  6. geminiScanService builds { inlineData: { data, mimeType } } and sends
 //     the base64 directly to Gemini Vision API
 //
-import React, { useRef, useEffect, useState } from 'react';
+//  AUTO-CAPTURE FACE DETECTION FLOW:
+//  ───────────────────────────────────
+//  1. CameraView fires onFacesDetected continuously while in 'guide' phase
+//  2. isFaceInFrame() checks the detected face bounds against the viewfinder
+//     region — the face must cover ≥ FACE_MIN_FILL of the VF area and be
+//     centred within FACE_CENTER_TOLERANCE
+//  3. A stable-face timer runs for FACE_STABLE_MS; if the face leaves the
+//     frame the timer resets
+//  4. Once stable, startScan() fires automatically (same as pressing the CTA)
+//  5. The user can still tap "Start Scan" manually at any point after allReady
+
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Animated,
   StatusBar, Dimensions, Platform, Linking,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+// NOTE: expo-face-detector is NOT imported — it requires a native dev build
+// and crashes in Expo Go. We use plain string constants below.
 import { useNavigation } from '@react-navigation/native';
 
 const { width: W, height: H } = Dimensions.get('window');
-const VF = W * 0.80;   // viewfinder square size
+const VF   = W * 0.80;   // viewfinder square size
+const SIDE = (W - VF) / 2;
+const TOP_H = H * 0.16;
+
+// ── Face-detection tuning ────────────────────────────────────
+const FACE_MIN_FILL       = 0.18;   // face bounds must cover ≥18% of VF area
+const FACE_CENTER_TOL     = 0.32;   // face centre must be within 32% of VF centre
+const FACE_STABLE_MS      = 1400;   // ms face must be stable before auto-capture
 
 const C = {
   bg:         '#000000',
@@ -33,11 +53,60 @@ const C = {
   error:      '#E05C3A',
 };
 
+// ─────────────────────────────────────────────────────────────
+//  Helpers
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Returns true when a detected face is sufficiently centred inside the
+ * viewfinder and large enough to be a usable selfie.
+ *
+ * expo-face-detector reports bounds in the full-camera-preview coordinate
+ * space. Because the camera preview fills the screen we can map VF coords
+ * back to screen coords for the comparison.
+ *
+ * @param {object} face - face object from onFacesDetected
+ */
+function isFaceInFrame(face) {
+  if (!face?.bounds) return false;
+  const { origin, size } = face.bounds;
+
+  // VF region in screen coords
+  const vfLeft   = SIDE;
+  const vfTop    = TOP_H;
+  const vfRight  = SIDE + VF;
+  const vfBottom = TOP_H + VF;
+  const vfCX     = SIDE + VF / 2;
+  const vfCY     = TOP_H + VF / 2;
+
+  // Face centre & fill
+  const faceCX   = origin.x + size.width  / 2;
+  const faceCY   = origin.y + size.height / 2;
+  const faceArea = size.width * size.height;
+  const vfArea   = VF * VF;
+  const fill     = faceArea / vfArea;
+
+  // Face must be mostly inside the VF
+  const inside =
+    origin.x >= vfLeft  - VF * 0.1 &&
+    origin.y >= vfTop   - VF * 0.1 &&
+    origin.x + size.width  <= vfRight  + VF * 0.1 &&
+    origin.y + size.height <= vfBottom + VF * 0.1;
+
+  // Face centre must be near VF centre (normalised distance)
+  const dx = Math.abs(faceCX - vfCX) / VF;
+  const dy = Math.abs(faceCY - vfCY) / VF;
+
+  return inside && fill >= FACE_MIN_FILL && dx <= FACE_CENTER_TOL && dy <= FACE_CENTER_TOL;
+}
+
 // ─── Corner bracket ───────────────────────────────────────────
-function CornerBracket({ pos, active }) {
+function CornerBracket({ pos, active, faceDetected }) {
   const op = useRef(new Animated.Value(0.55)).current;
+  const color = faceDetected ? C.success : active ? C.gold : 'rgba(255,255,255,0.38)';
+
   useEffect(() => {
-    if (active) {
+    if (active || faceDetected) {
       Animated.loop(
         Animated.sequence([
           Animated.timing(op, { toValue: 1,    duration: 700, useNativeDriver: true }),
@@ -47,9 +116,9 @@ function CornerBracket({ pos, active }) {
     } else {
       op.setValue(0.55);
     }
-  }, [active]);
+  }, [active, faceDetected]);
 
-  const base = { position: 'absolute', width: 26, height: 26, borderColor: active ? C.gold : 'rgba(255,255,255,0.38)', borderWidth: 2.5 };
+  const base = { position: 'absolute', width: 26, height: 26, borderColor: color, borderWidth: 2.5 };
   const corners = {
     TL: { top: 0,    left:  0,  borderRightWidth: 0, borderBottomWidth: 0, borderTopLeftRadius:    4 },
     TR: { top: 0,    right: 0,  borderLeftWidth:  0, borderBottomWidth: 0, borderTopRightRadius:   4 },
@@ -86,10 +155,16 @@ function ScanLine({ active }) {
 }
 
 // ─── Face oval guide ──────────────────────────────────────────
-function FaceGuide({ ready }) {
+function FaceGuide({ ready, faceDetected }) {
   const sc = useRef(new Animated.Value(1)).current;
+  const borderColor = faceDetected
+    ? C.success
+    : ready
+    ? C.gold
+    : 'rgba(255,255,255,0.22)';
+
   useEffect(() => {
-    if (ready) {
+    if (ready || faceDetected) {
       Animated.loop(
         Animated.sequence([
           Animated.timing(sc, { toValue: 1.025, duration: 1500, useNativeDriver: true }),
@@ -97,21 +172,45 @@ function FaceGuide({ ready }) {
         ])
       ).start();
     }
-  }, [ready]);
+  }, [ready, faceDetected]);
+
   return (
     <Animated.View style={{
       position: 'absolute',
       width:        VF * 0.58,
       height:       VF * 0.74,
       borderRadius: VF * 0.30,
-      borderWidth:  1.5,
-      borderColor:  ready ? C.gold : 'rgba(255,255,255,0.22)',
+      borderWidth:  faceDetected ? 2.5 : 1.5,
+      borderColor,
       top:  VF * 0.13,
       left: VF * 0.21,
       transform: [{ scale: sc }],
     }} />
   );
 }
+
+// ─── Face-lock progress ring ──────────────────────────────────
+// A thin arc around the oval that fills as the stable-face timer counts down.
+function FaceLockRing({ progress }) {
+  // progress: 0–1
+  const animProg = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(animProg, { toValue: progress, duration: 120, useNativeDriver: false }).start();
+  }, [progress]);
+
+  // We approximate a circular progress with a border on a square rotated view.
+  // For a proper arc we'd need SVG; here we use opacity + scale shorthand.
+  if (progress <= 0) return null;
+  return (
+    <View style={fl.wrap} pointerEvents="none">
+      <View style={[fl.ring, { borderColor: C.success, opacity: 0.18 + progress * 0.82 }]} />
+    </View>
+  );
+}
+const fl = StyleSheet.create({
+  wrap: { position: 'absolute', top: VF * 0.10, left: VF * 0.17, width: VF * 0.66, height: VF * 0.80, borderRadius: VF * 0.33, alignItems: 'center', justifyContent: 'center' },
+  ring: { width: '100%', height: '100%', borderRadius: VF * 0.33, borderWidth: 3 },
+});
 
 // ─── Checklist pill ───────────────────────────────────────────
 function Pill({ icon, label, done }) {
@@ -125,13 +224,13 @@ function Pill({ icon, label, done }) {
     if (done) setTimeout(() => Animated.spring(sc, { toValue: 1, friction: 5, useNativeDriver: true }).start(), 220);
   }, [done]);
   return (
-    <Animated.View style={[p.row, done && p.rowDone, { opacity: op, transform: [{ scale: sc }] }]}>
-      <Text style={p.icon}>{done ? '✓' : icon}</Text>
-      <Text style={[p.label, done && p.labelDone]}>{label}</Text>
+    <Animated.View style={[pp.row, done && pp.rowDone, { opacity: op, transform: [{ scale: sc }] }]}>
+      <Text style={pp.icon}>{done ? '✓' : icon}</Text>
+      <Text style={[pp.label, done && pp.labelDone]}>{label}</Text>
     </Animated.View>
   );
 }
-const p = StyleSheet.create({
+const pp = StyleSheet.create({
   row:      { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(0,0,0,0.52)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)', borderRadius: 24, paddingHorizontal: 14, paddingVertical: 9, marginBottom: 8 },
   rowDone:  { borderColor: 'rgba(93,190,138,0.55)', backgroundColor: 'rgba(93,190,138,0.10)' },
   icon:     { color: C.creamDim, fontSize: 13 },
@@ -200,10 +299,17 @@ export default function ScanCameraScreen() {
   const camRef     = useRef(null);
 
   const [permission, requestPermission] = useCameraPermissions();
-  const [phase,     setPhase]     = useState('guide');       // 'guide' | 'countdown' | 'scanning' | 'captured'
-  const [countdown, setCountdown] = useState(3);
-  const [checks,    setChecks]    = useState({ light: false, still: false, face: false });
-  const [error,     setError]     = useState(null);
+  const [phase,      setPhase]      = useState('guide');   // 'guide' | 'countdown' | 'scanning' | 'captured'
+  const [countdown,  setCountdown]  = useState(3);
+  const [checks,     setChecks]     = useState({ light: false, still: false, face: false });
+  const [error,      setError]      = useState(null);
+
+  // Face detection state
+  const [faceDetected,   setFaceDetected]   = useState(false);
+  const [faceLockProg,   setFaceLockProg]   = useState(0);   // 0–1 progress toward auto-capture
+  const faceStableTimer  = useRef(null);
+  const faceStableStart  = useRef(null);
+  const hasAutoTriggered = useRef(false);    // prevent double-fire
 
   // Auto-ask for permission
   useEffect(() => {
@@ -225,7 +331,13 @@ export default function ScanCameraScreen() {
   }, []);
 
   // ── Countdown → capture ───────────────────────────────────
-  const startScan = () => {
+  const startScan = useCallback(() => {
+    if (hasAutoTriggered.current) return;
+    hasAutoTriggered.current = true;
+
+    // Clear any face-lock timer
+    clearTimeout(faceStableTimer.current);
+    setFaceLockProg(0);
     setError(null);
     setPhase('countdown');
     setCountdown(3);
@@ -235,24 +347,95 @@ export default function ScanCameraScreen() {
       if (c <= 0) { clearInterval(t); setPhase('scanning'); capturePhoto(); }
       else setCountdown(c);
     }, 1000);
-  };
+  }, []);
+
+  // ── Face detection callback ───────────────────────────────
+  //
+  //  Called by CameraView every ~180 ms. Works when the native
+  //  ExpoFaceDetector module is available (dev build). In Expo Go
+  //  the callback may never fire — the fallback timer below handles that.
+  //
+  const nativeFaceDetectionFired = useRef(false);
+
+  const handleFacesDetected = useCallback(({ faces }) => {
+    nativeFaceDetectionFired.current = true;  // mark that native detector is live
+
+    if (phase !== 'guide' || hasAutoTriggered.current) return;
+
+    const allReady = checks.light && checks.still && checks.face;
+    if (!allReady) return;
+
+    const goodFace = Array.isArray(faces) && faces.length > 0 && isFaceInFrame(faces[0]);
+
+    if (goodFace) {
+      setFaceDetected(true);
+
+      if (!faceStableStart.current) {
+        faceStableStart.current = Date.now();
+        faceStableTimer.current = setInterval(() => {
+          const elapsed  = Date.now() - faceStableStart.current;
+          const progress = Math.min(elapsed / FACE_STABLE_MS, 1);
+          setFaceLockProg(progress);
+          if (progress >= 1) {
+            clearInterval(faceStableTimer.current);
+            startScan();
+          }
+        }, 60);
+      }
+    } else {
+      setFaceDetected(false);
+      setFaceLockProg(0);
+      faceStableStart.current = null;
+      clearInterval(faceStableTimer.current);
+    }
+  }, [phase, checks, startScan]);
+
+  // ── Expo-Go fallback auto-capture ─────────────────────────
+  //
+  //  If native face detection never fires (Expo Go / simulator),
+  //  auto-trigger the scan 2 s after allReady, just like a face
+  //  was detected and held steady.
+  //
+  const allReadyForFallback = checks.light && checks.still && checks.face;
+  useEffect(() => {
+    if (!allReadyForFallback || phase !== 'guide') return;
+
+    // Give the native detector 800 ms to prove it's alive first
+    const probe = setTimeout(() => {
+      if (nativeFaceDetectionFired.current) return; // native is working — let it drive
+
+      // Native not available: animate a fake "face found" progress over 2 s
+      setFaceDetected(true);
+      faceStableStart.current = Date.now();
+      faceStableTimer.current = setInterval(() => {
+        const elapsed  = Date.now() - faceStableStart.current;
+        const progress = Math.min(elapsed / FACE_STABLE_MS, 1);
+        setFaceLockProg(progress);
+        if (progress >= 1) {
+          clearInterval(faceStableTimer.current);
+          startScan();
+        }
+      }, 60);
+    }, 800);
+
+    return () => {
+      clearTimeout(probe);
+      clearInterval(faceStableTimer.current);
+    };
+  }, [allReadyForFallback, phase]);
+
+  // Cleanup face timer on unmount
+  useEffect(() => () => clearInterval(faceStableTimer.current), []);
 
   // ── Capture photo → extract base64 ───────────────────────
-  //
-  //  base64: true  makes expo-camera return photo.base64 as a
-  //  plain base64 string (no "data:image/jpeg;base64," prefix).
-  //  We pass this directly to ScanProcessingScreen.
-  //  It ends up in the JSON body → backend → Gemini inlineData.
-  //  Nothing is written to disk on the backend at any point.
-  //
   const capturePhoto = async () => {
     try {
       if (!camRef.current) throw new Error('Camera not initialised');
 
       const photo = await camRef.current.takePictureAsync({
-        quality:        0.82,   // ~300–700 KB JPEG at typical selfie resolution
-        base64:         true,   // ← REQUIRED: gives us the string to send to Gemini
-        exif:           false,  // skip metadata — we don't need it
+        quality:        0.82,
+        base64:         true,
+        exif:           false,
         skipProcessing: Platform.OS === 'android',
       });
 
@@ -260,17 +443,17 @@ export default function ScanCameraScreen() {
 
       setPhase('captured');
 
-      // Short white-flash moment, then hand off to processing screen
       setTimeout(() => {
         navigation.navigate('ScanProcessing', {
-          imageBase64: photo.base64,   // pure base64 — backend reads this directly
-          mimeType:    'image/jpeg',   // expo-camera always outputs JPEG
-          imageUri:    photo.uri,      // local URI kept only for optional preview
+          imageBase64: photo.base64,
+          mimeType:    'image/jpeg',
+          imageUri:    photo.uri,
         });
       }, 420);
 
     } catch (e) {
       console.error('[ScanCamera] capture failed:', e);
+      hasAutoTriggered.current = false;
       setPhase('guide');
       setError('Could not capture photo. Please try again.');
     }
@@ -293,15 +476,29 @@ export default function ScanCameraScreen() {
     );
   }
 
-  const allReady   = Object.values(checks).every(Boolean);
+  const allReady   = checks.light && checks.still && checks.face;
   const isScanning = phase === 'scanning';
 
   return (
     <View style={s.root}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
-      {/* Full-screen live camera */}
-      <CameraView ref={camRef} style={StyleSheet.absoluteFill} facing="front" zoom={0} />
+      {/* Full-screen live camera with face detection */}
+      <CameraView
+        ref={camRef}
+        style={StyleSheet.absoluteFill}
+        facing="front"
+        zoom={0}
+        // ── Face detection (plain constants — no expo-face-detector import) ──
+        onFacesDetected={handleFacesDetected}
+        faceDetectorSettings={{
+          mode:               'fast',   // FaceDetectorMode.fast
+          detectLandmarks:    'none',   // FaceDetectorLandmarks.none
+          runClassifications: 'none',   // FaceDetectorClassifications.none
+          minDetectionInterval: 180,
+          tracking: true,
+        }}
+      />
 
       {/* Dark overlay with transparent viewfinder window */}
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
@@ -309,12 +506,13 @@ export default function ScanCameraScreen() {
         <View style={s.ovRow}>
           <View style={s.ovSide} />
           <View style={s.vf}>
-            <CornerBracket pos="TL" active={allReady} />
-            <CornerBracket pos="TR" active={allReady} />
-            <CornerBracket pos="BL" active={allReady} />
-            <CornerBracket pos="BR" active={allReady} />
-            <FaceGuide ready={allReady} />
-            <ScanLine  active={isScanning} />
+            <CornerBracket pos="TL" active={allReady} faceDetected={faceDetected} />
+            <CornerBracket pos="TR" active={allReady} faceDetected={faceDetected} />
+            <CornerBracket pos="BL" active={allReady} faceDetected={faceDetected} />
+            <CornerBracket pos="BR" active={allReady} faceDetected={faceDetected} />
+            <FaceGuide ready={allReady} faceDetected={faceDetected} />
+            <FaceLockRing progress={faceLockProg} />
+            <ScanLine active={isScanning} />
           </View>
           <View style={s.ovSide} />
         </View>
@@ -340,6 +538,16 @@ export default function ScanCameraScreen() {
         <Text style={s.badgeLabel}>MELANIN SCAN  ·  FRONT CAMERA</Text>
       </Animated.View>
 
+      {/* Face-detected status label */}
+      {phase === 'guide' && allReady && (
+        <View style={s.faceStatus}>
+          <View style={[s.faceStatusDot, { backgroundColor: faceDetected ? C.success : 'rgba(255,255,255,0.28)' }]} />
+          <Text style={[s.faceStatusLabel, faceDetected && { color: C.success }]}>
+            {faceDetected ? `Hold still… ${Math.round(faceLockProg * 100)}%` : 'Looking for your face…'}
+          </Text>
+        </View>
+      )}
+
       {/* Bottom controls */}
       <Animated.View style={[s.bottom, { opacity: bOp }]}>
 
@@ -348,7 +556,7 @@ export default function ScanCameraScreen() {
             <Text style={s.checkTitle}>Before you scan</Text>
             <Pill icon="💡" label="Good natural light on your face"  done={checks.light} />
             <Pill icon="🤳" label="Hold your phone steady"           done={checks.still} />
-            <Pill icon="◎" label="Centre your face in the frame"    done={checks.face}  />
+            <Pill icon="◎"  label="Centre your face in the frame"   done={checks.face}  />
           </View>
         )}
 
@@ -368,13 +576,13 @@ export default function ScanCameraScreen() {
         {phase === 'guide' && (
           <TouchableOpacity
             style={[s.cta, !allReady && s.ctaOff]}
-            onPress={allReady ? startScan : undefined}
+            onPress={allReady ? () => { hasAutoTriggered.current = false; startScan(); } : undefined}
             activeOpacity={allReady ? 0.85 : 1}
           >
             <View style={s.ctaInner}>
               {allReady && <View style={s.ctaShimmer} />}
               <Text style={[s.ctaLabel, !allReady && s.ctaLabelOff]}>
-                {allReady ? 'Start Scan' : 'Getting ready…'}
+                {allReady ? 'Tap to Scan' : 'Getting ready…'}
               </Text>
             </View>
           </TouchableOpacity>
@@ -387,9 +595,6 @@ export default function ScanCameraScreen() {
     </View>
   );
 }
-
-const SIDE  = (W - VF) / 2;
-const TOP_H = H * 0.16;
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000' },
@@ -408,6 +613,10 @@ const s = StyleSheet.create({
   badge:      { position: 'absolute', top: Platform.OS === 'ios' ? 60 : 40, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.52)', borderWidth: 1, borderColor: 'rgba(200,134,10,0.30)', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7 },
   badgeDot:   { width: 6, height: 6, borderRadius: 3, backgroundColor: C.gold, marginRight: 6 },
   badgeLabel: { color: 'rgba(245,222,179,0.65)', fontSize: 10, fontWeight: '700', letterSpacing: 1.8 },
+
+  faceStatus:      { position: 'absolute', top: TOP_H + VF + 10, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' },
+  faceStatusDot:   { width: 7, height: 7, borderRadius: 4 },
+  faceStatusLabel: { color: C.creamDim, fontSize: 12, fontWeight: '600', letterSpacing: 0.4 },
 
   bottom:     { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 24, paddingBottom: Platform.OS === 'ios' ? 50 : 32, alignItems: 'center' },
   checklist:  { width: '100%', marginBottom: 22 },

@@ -20,6 +20,7 @@
 //           regenerated so it always reflects the most recent analysis.
 //
 import React, { useRef, useEffect, useState, useCallback } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   View,
   Text,
@@ -84,6 +85,135 @@ function getStepIcon(stepName) {
     if (key.includes(k)) return v;
   }
   return "◉";
+}
+
+// ── Storage key for 6-hour cooldown ─────────────────────────
+const COOLDOWN_KEY = (userId, tab) => `routine_done_${userId}_${tab}`;
+const COOLDOWN_MS  = 6 * 60 * 60 * 1000; // 6 hours
+
+function formatCountdown(ms) {
+  if (ms <= 0) return "0h 0m";
+  const h = Math.floor(ms / 3_600_000);
+  const m = Math.floor((ms % 3_600_000) / 60_000);
+  return `${h}h ${m}m`;
+}
+
+// ── Build rich how-to-use instructions from a step ───────────
+function buildHowToUse(item) {
+  const key = (item.step || "").toLowerCase();
+  const product = item.productType || "product";
+
+  const instructions = {
+    cleanse: [
+      `Wet your face with lukewarm water.`,
+      `Dispense a pea-sized amount of ${product} onto your fingertips.`,
+      `Gently massage in circular motions for 30–60 seconds, avoiding the eye area.`,
+      `Rinse thoroughly with cool water and pat dry with a clean towel.`,
+    ],
+    "double cleanse": [
+      `Start with an oil cleanser — massage over dry skin to dissolve sunscreen and makeup.`,
+      `Emulsify with a little water, then rinse off.`,
+      `Follow with ${product} as your water-based second cleanse.`,
+      `Rinse with cool water and pat dry — skin should feel clean, not tight.`,
+    ],
+    tone: [
+      `After cleansing, pour a small amount of ${product} onto a cotton pad or your palm.`,
+      `Apply gently across your face by pressing or sweeping — avoid rubbing.`,
+      `Focus on areas prone to congestion (nose, forehead) and let absorb for 30 seconds.`,
+      `Proceed immediately to the next step while skin is still slightly damp.`,
+    ],
+    toner: [
+      `After cleansing, pour a small amount of ${product} onto a cotton pad or your palm.`,
+      `Apply gently across your face by pressing or sweeping — avoid rubbing.`,
+      `Focus on areas prone to congestion (nose, forehead) and let absorb for 30 seconds.`,
+      `Proceed immediately to the next step while skin is still slightly damp.`,
+    ],
+    serum: [
+      `Apply 2–3 drops of ${product} to clean, toned skin.`,
+      `Warm between your fingertips and press gently against cheeks, forehead, and chin.`,
+      `Use patting motions — not rubbing — to help absorption.`,
+      `Wait 60 seconds before layering the next product.`,
+    ],
+    treatment: [
+      `Apply a thin layer of ${product} to the targeted area.`,
+      `Use your ring finger for gentle application to avoid tugging.`,
+      `Allow to fully absorb (2 min) before applying moisturiser on top.`,
+      `Start 2–3× per week if it's an active treatment and build up gradually.`,
+    ],
+    spf: [
+      `This is the LAST step of your morning routine — always after moisturiser.`,
+      `Use a generous amount of ${product} — about half a teaspoon for the face.`,
+      `Apply evenly over your entire face and neck. Don't forget ears and the hairline.`,
+      `Reapply every 2 hours when outdoors or after sweating.`,
+    ],
+    sunscreen: [
+      `This is the LAST step of your morning routine — always after moisturiser.`,
+      `Use a generous amount of ${product} — about half a teaspoon for the face.`,
+      `Apply evenly over your entire face and neck. Don't forget ears and the hairline.`,
+      `Reapply every 2 hours when outdoors or after sweating.`,
+    ],
+    moisturise: [
+      `Take a 5–10p coin-sized amount of ${product}.`,
+      `Warm between palms and press onto face, starting from the centre and blending outward.`,
+      `Pay extra attention to dry patches around the nose and cheeks.`,
+      `Gently press any excess into your neck and décolletage.`,
+    ],
+    moisturizer: [
+      `Take a 5–10p coin-sized amount of ${product}.`,
+      `Warm between palms and press onto face, starting from the centre and blending outward.`,
+      `Pay extra attention to dry patches around the nose and cheeks.`,
+      `Gently press any excess into your neck and décolletage.`,
+    ],
+    exfoliate: [
+      `Use on freshly cleansed, damp skin.`,
+      `Apply ${product} in gentle circular motions for 30 seconds — don't press hard.`,
+      `Rinse thoroughly with cool water.`,
+      `Always follow with moisturiser. Limit use to 2–3× per week to avoid over-exfoliation.`,
+    ],
+    "eye cream": [
+      `Dispense a rice-grain-sized amount of ${product} (a little goes a long way).`,
+      `Use your ring finger — it applies the least pressure.`,
+      `Tap gently along the orbital bone, moving from inner to outer corner.`,
+      `Never drag or rub the delicate skin — always tap and press.`,
+    ],
+    oil: [
+      `Warm 3–4 drops of ${product} between your palms.`,
+      `Press your palms against your cheeks, then glide outward and upward.`,
+      `Apply over or under moisturiser depending on the oil's weight.`,
+      `Avoid the nose and chin if prone to breakouts.`,
+    ],
+    mask: [
+      `Apply a generous, even layer of ${product} over clean skin, avoiding eyes and lips.`,
+      `Leave on for the time specified (usually 10–15 min).`,
+      `Rinse off thoroughly with lukewarm water.`,
+      `Follow with toner and moisturiser while skin is still slightly damp.`,
+    ],
+  };
+
+  for (const [k, steps] of Object.entries(instructions)) {
+    if (key.includes(k)) return steps;
+  }
+
+  // Generic fallback
+  return [
+    `Apply ${product} to clean, dry skin.`,
+    `Use gentle, upward strokes across your face and neck.`,
+    `Allow to fully absorb before applying the next product.`,
+    item.notes || `This step supports your skin's overall health and balance.`,
+  ];
+}
+
+// ── Amount guide ──────────────────────────────────────────────
+function getAmountGuide(stepName) {
+  const key = (stepName || "").toLowerCase();
+  if (key.includes("cleanse"))    return "Pea-sized amount";
+  if (key.includes("serum"))      return "2–3 drops";
+  if (key.includes("oil"))        return "3–4 drops";
+  if (key.includes("spf") || key.includes("sunscreen")) return "½ teaspoon";
+  if (key.includes("eye"))        return "Rice-grain size";
+  if (key.includes("mask"))       return "Generous even layer";
+  if (key.includes("tone") || key.includes("toner")) return "Soaked cotton pad";
+  return "Pea to coin-sized amount";
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -429,29 +559,21 @@ const pc = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────
-//  Step card
+//  Step card  (with rich how-to-use instructions)
 // ─────────────────────────────────────────────────────────────
 function StepCard({ item, isAM, index, completed, onToggle, saving }) {
   const [expanded, setExpanded] = useState(false);
   const expandAnim = useRef(new Animated.Value(0)).current;
   const checkScale = useRef(new Animated.Value(completed ? 1 : 0)).current;
-  const cardScale = useRef(new Animated.Value(1)).current;
+  const cardScale  = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    Animated.spring(checkScale, {
-      toValue: completed ? 1 : 0,
-      friction: 5,
-      useNativeDriver: true,
-    }).start();
+    Animated.spring(checkScale, { toValue: completed ? 1 : 0, friction: 5, useNativeDriver: true }).start();
   }, [completed]);
 
   const toggleExpand = () => {
     setExpanded((e) => {
-      Animated.timing(expandAnim, {
-        toValue: e ? 0 : 1,
-        duration: 260,
-        useNativeDriver: false,
-      }).start();
+      Animated.timing(expandAnim, { toValue: e ? 0 : 1, duration: 280, useNativeDriver: false }).start();
       return !e;
     });
   };
@@ -461,82 +583,43 @@ function StepCard({ item, isAM, index, completed, onToggle, saving }) {
     onToggle();
     if (!completed) {
       Animated.sequence([
-        Animated.spring(checkScale, {
-          toValue: 1.25,
-          friction: 4,
-          useNativeDriver: true,
-        }),
-        Animated.spring(checkScale, {
-          toValue: 1,
-          friction: 4,
-          useNativeDriver: true,
-        }),
+        Animated.spring(checkScale, { toValue: 1.25, friction: 4, useNativeDriver: true }),
+        Animated.spring(checkScale, { toValue: 1,    friction: 4, useNativeDriver: true }),
       ]).start();
     }
   };
 
-  const accentColor = isAM ? C.amColor : C.pmColor;
-  const accentPale = isAM ? C.amPale : C.pmPale;
-  const icon = getStepIcon(item.step);
-  const whyText =
-    item.notes ||
-    `Apply ${item.productType || "product"} focusing on cleansed skin.`;
+  const accentColor  = isAM ? C.amColor : C.pmColor;
+  const accentPale   = isAM ? C.amPale  : C.pmPale;
+  const icon         = getStepIcon(item.step);
+  const howToSteps   = buildHowToUse(item);
+  const amountGuide  = getAmountGuide(item.step);
+
   const ingredientList = item.keyIngredient
-    ? item.keyIngredient
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean)
+    ? item.keyIngredient.split(",").map((s) => s.trim()).filter(Boolean)
     : [];
 
-  // Products attached to this step — from routine step's products[] array
   const stepProducts = Array.isArray(item.products) ? item.products : [];
 
-  // Calculate dynamic expanded height: base notes + products
-  const expandedContentH = 80 + stepProducts.length * 110;
-  const extraH = expandAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, expandedContentH],
-  });
-  const extraOp = expandAnim.interpolate({
-    inputRange: [0, 0.5, 1],
-    outputRange: [0, 0, 1],
-  });
+  // Dynamic expanded height: instructions + products
+  const instructionsH    = 24 + howToSteps.length * 44 + 40; // amount row
+  const expandedContentH = instructionsH + stepProducts.length * 120;
+  const extraH = expandAnim.interpolate({ inputRange: [0, 1], outputRange: [0, expandedContentH] });
+  const extraOp = expandAnim.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0, 0, 1] });
 
   return (
     <FadeSlide delay={index * 65} style={{ marginBottom: 10 }}>
       <TouchableOpacity
-        onPressIn={() =>
-          Animated.spring(cardScale, {
-            toValue: 0.98,
-            useNativeDriver: true,
-          }).start()
-        }
-        onPressOut={() =>
-          Animated.spring(cardScale, {
-            toValue: 1,
-            useNativeDriver: true,
-          }).start()
-        }
+        onPressIn={()  => Animated.spring(cardScale, { toValue: 0.98, useNativeDriver: true }).start()}
+        onPressOut={() => Animated.spring(cardScale, { toValue: 1,    useNativeDriver: true }).start()}
         onPress={toggleExpand}
         activeOpacity={1}
       >
-        <Animated.View
-          style={[
-            sc.root,
-            completed && sc.rootDone,
-            { transform: [{ scale: cardScale }] },
-          ]}
-        >
+        <Animated.View style={[sc.root, completed && sc.rootDone, { transform: [{ scale: cardScale }] }]}>
+
           {/* Step number badge */}
-          <View
-            style={[
-              sc.stepBadge,
-              { backgroundColor: accentPale, borderColor: accentColor },
-            ]}
-          >
-            <Text style={[sc.stepNum, { color: accentColor }]}>
-              {item.order}
-            </Text>
+          <View style={[sc.stepBadge, { backgroundColor: accentPale, borderColor: accentColor }]}>
+            <Text style={[sc.stepNum, { color: accentColor }]}>{item.order}</Text>
           </View>
 
           {/* Content */}
@@ -544,178 +627,131 @@ function StepCard({ item, isAM, index, completed, onToggle, saving }) {
             <View style={sc.topRow}>
               <View style={{ flex: 1 }}>
                 <Text style={sc.action}>{(item.step || "").toUpperCase()}</Text>
-                <Text
-                  style={[sc.product, completed && sc.productDone]}
-                  numberOfLines={expanded ? 0 : 2}
-                >
+                <Text style={[sc.product, completed && sc.productDone]} numberOfLines={expanded ? 0 : 2}>
                   {item.productType || "—"}
                 </Text>
               </View>
               <View style={{ alignItems: "flex-end", gap: 4 }}>
                 <Text style={sc.icon}>{icon}</Text>
-                <Text style={[sc.expandHint, expanded && { opacity: 0.3 }]}>
-                  {expanded ? "▲" : "▼"}
-                </Text>
+                <Text style={[sc.expandHint, expanded && { opacity: 0.3 }]}>{expanded ? "▲" : "▼"}</Text>
               </View>
             </View>
 
             {/* Key ingredient pills */}
             {item.keyIngredient && (
-              <View
-                style={{
-                  flexDirection: "row",
-                  marginTop: 6,
-                  gap: 6,
-                  flexWrap: "wrap",
-                }}
-              >
+              <View style={{ flexDirection: "row", marginTop: 6, gap: 6, flexWrap: "wrap" }}>
                 {ingredientList.map((ing, i) => (
-                  <View key={i} style={sc.ingPill}>
-                    <Text style={sc.ingText}>{ing}</Text>
-                  </View>
+                  <View key={i} style={sc.ingPill}><Text style={sc.ingText}>{ing}</Text></View>
                 ))}
               </View>
             )}
 
-            {/* Expandable section: notes + products */}
+            {/* ── Expanded: How to use + products ── */}
             <Animated.View style={{ height: extraH, overflow: "hidden" }}>
-              <Animated.View style={{ opacity: extraOp, paddingTop: 10 }}>
-                {/* Usage note */}
-                <Text style={sc.why}>{whyText}</Text>
+              <Animated.View style={{ opacity: extraOp, paddingTop: 12 }}>
 
-                {/* ✅ FIX 3: Products recommended for this step */}
-                {stepProducts.length > 0 && (
-                  <View style={{ marginTop: 10 }}>
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 6,
-                        marginBottom: 4,
-                      }}
-                    >
-                      <View
-                        style={{
-                          width: 3,
-                          height: 12,
-                          borderRadius: 1.5,
-                          backgroundColor: C.gold,
-                        }}
-                      />
-                      <Text
-                        style={{
-                          color: C.gold,
-                          fontSize: 10,
-                          fontWeight: "700",
-                          letterSpacing: 1,
-                          textTransform: "uppercase",
-                        }}
-                      >
-                        Recommended Products
-                      </Text>
+                {/* Amount guide row */}
+                <View style={sc.amountRow}>
+                  <Text style={sc.amountIcon}>⚗</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={sc.amountLabel}>HOW MUCH TO USE</Text>
+                    <Text style={sc.amountValue}>{amountGuide}</Text>
+                  </View>
+                </View>
+
+                {/* Section header */}
+                <View style={sc.sectionHeader}>
+                  <View style={sc.sectionBar} />
+                  <Text style={sc.sectionTitle}>HOW TO USE</Text>
+                </View>
+
+                {/* Numbered steps */}
+                {howToSteps.map((step, si) => (
+                  <View key={si} style={sc.instrRow}>
+                    <View style={[sc.instrNum, { backgroundColor: accentPale, borderColor: accentColor }]}>
+                      <Text style={[sc.instrNumText, { color: accentColor }]}>{si + 1}</Text>
                     </View>
-                    {stepProducts.map((prod, pi) => (
-                      <ProductCard key={pi} product={prod} />
-                    ))}
+                    <Text style={sc.instrText}>{step}</Text>
+                  </View>
+                ))}
+
+                {/* Why this step (notes) */}
+                {item.notes ? (
+                  <View style={sc.whyBox}>
+                    <Text style={sc.whyLabel}>💡  WHY THIS STEP</Text>
+                    <Text style={sc.why}>{item.notes}</Text>
+                  </View>
+                ) : null}
+
+                {/* Recommended products for this step */}
+                {stepProducts.length > 0 && (
+                  <View style={{ marginTop: 12 }}>
+                    <View style={sc.sectionHeader}>
+                      <View style={sc.sectionBar} />
+                      <Text style={sc.sectionTitle}>RECOMMENDED PRODUCTS</Text>
+                    </View>
+                    {stepProducts.map((prod, pi) => <ProductCard key={pi} product={prod} />)}
                   </View>
                 )}
+
               </Animated.View>
             </Animated.View>
           </View>
 
           {/* Check button */}
-          <TouchableOpacity
-            onPress={handleCheck}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
+          <TouchableOpacity onPress={handleCheck} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <View style={[sc.checkBox, completed && sc.checkBoxDone]}>
-              {saving ? (
-                <ActivityIndicator size="small" color={C.success} />
-              ) : (
-                <Animated.Text
-                  style={[sc.checkMark, { transform: [{ scale: checkScale }] }]}
-                >
-                  ✓
-                </Animated.Text>
-              )}
+              {saving
+                ? <ActivityIndicator size="small" color={C.success} />
+                : <Animated.Text style={[sc.checkMark, { transform: [{ scale: checkScale }] }]}>✓</Animated.Text>
+              }
             </View>
           </TouchableOpacity>
+
         </Animated.View>
       </TouchableOpacity>
     </FadeSlide>
   );
 }
 const sc = StyleSheet.create({
-  root: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
-    backgroundColor: C.bgCard,
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 14,
-    padding: 14,
-  },
-  rootDone: {
-    borderColor: "rgba(93,190,138,0.30)",
-    backgroundColor: "rgba(93,190,138,0.04)",
-  },
-  stepBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 1,
-  },
-  stepNum: { fontSize: 12, fontWeight: "900" },
-  topRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-  },
-  action: {
-    color: C.creamDim,
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 0.8,
-    marginBottom: 3,
-  },
-  product: {
-    color: C.cream,
-    fontSize: 14,
-    fontWeight: "700",
-    flex: 1,
-    paddingRight: 4,
-  },
+  root:      { flexDirection: "row", alignItems: "flex-start", gap: 12, backgroundColor: C.bgCard, borderWidth: 1, borderColor: C.border, borderRadius: 14, padding: 14 },
+  rootDone:  { borderColor: "rgba(93,190,138,0.30)", backgroundColor: "rgba(93,190,138,0.04)" },
+  stepBadge: { width: 28, height: 28, borderRadius: 8, borderWidth: 1.5, alignItems: "center", justifyContent: "center", marginTop: 1 },
+  stepNum:   { fontSize: 12, fontWeight: "900" },
+  topRow:    { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
+  action:    { color: C.creamDim, fontSize: 10, fontWeight: "700", letterSpacing: 0.8, marginBottom: 3 },
+  product:   { color: C.cream, fontSize: 14, fontWeight: "700", flex: 1, paddingRight: 4 },
   productDone: { textDecorationLine: "line-through", color: C.creamDim },
-  icon: { fontSize: 18 },
-  expandHint: { color: C.creamFaint, fontSize: 9, fontWeight: "700" },
-  ingPill: {
-    backgroundColor: C.goldPale,
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  ingText: { color: C.creamDim, fontSize: 10, fontWeight: "600" },
-  why: { color: C.creamDim, fontSize: 12, lineHeight: 18 },
-  checkBox: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    borderColor: C.border,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  checkBoxDone: {
-    backgroundColor: "rgba(93,190,138,0.18)",
-    borderColor: C.success,
-  },
-  checkMark: { color: C.success, fontSize: 14, fontWeight: "900" },
+  icon:      { fontSize: 18 },
+  expandHint:{ color: C.creamFaint, fontSize: 9, fontWeight: "700" },
+  ingPill:   { backgroundColor: C.goldPale, borderWidth: 1, borderColor: C.border, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  ingText:   { color: C.creamDim, fontSize: 10, fontWeight: "600" },
+
+  // Amount row
+  amountRow:   { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "rgba(200,134,10,0.07)", borderWidth: 1, borderColor: "rgba(200,134,10,0.18)", borderRadius: 10, padding: 10, marginBottom: 12 },
+  amountIcon:  { fontSize: 18 },
+  amountLabel: { color: C.creamFaint, fontSize: 9, fontWeight: "700", letterSpacing: 0.8, marginBottom: 1 },
+  amountValue: { color: C.gold, fontSize: 13, fontWeight: "700" },
+
+  // Section header (How to use / Products)
+  sectionHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 },
+  sectionBar:    { width: 3, height: 12, borderRadius: 1.5, backgroundColor: C.gold },
+  sectionTitle:  { color: C.gold, fontSize: 9, fontWeight: "700", letterSpacing: 1.2 },
+
+  // Numbered instruction rows
+  instrRow:     { flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 10 },
+  instrNum:     { width: 22, height: 22, borderRadius: 6, borderWidth: 1, alignItems: "center", justifyContent: "center", marginTop: 1, flexShrink: 0 },
+  instrNumText: { fontSize: 11, fontWeight: "800" },
+  instrText:    { color: C.creamDim, fontSize: 12, lineHeight: 18, flex: 1 },
+
+  // Why this step box
+  whyBox:   { backgroundColor: "rgba(245,222,179,0.05)", borderLeftWidth: 2, borderLeftColor: C.gold, borderRadius: 8, padding: 10, marginTop: 8 },
+  whyLabel: { color: C.gold, fontSize: 9, fontWeight: "700", letterSpacing: 0.8, marginBottom: 4 },
+  why:      { color: C.creamDim, fontSize: 12, lineHeight: 18 },
+
+  checkBox:     { width: 28, height: 28, borderRadius: 8, borderWidth: 1.5, borderColor: C.border, alignItems: "center", justifyContent: "center" },
+  checkBoxDone: { backgroundColor: "rgba(93,190,138,0.18)", borderColor: C.success },
+  checkMark:    { color: C.success, fontSize: 14, fontWeight: "900" },
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -921,21 +957,90 @@ const emp = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────
+//  Cooldown banner — shown for 6h after completing a routine
+// ─────────────────────────────────────────────────────────────
+function CooldownBanner({ tab, remainingMs, onDismiss }) {
+  const [timeLeft, setTimeLeft] = useState(remainingMs);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTimeLeft((prev) => {
+        const next = prev - 1000;
+        if (next <= 0) { clearInterval(interval); onDismiss(); return 0; }
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.04, duration: 1600, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1,    duration: 1600, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+
+  const isAM = tab === "AM";
+  const accentColor = isAM ? C.amColor : C.pmColor;
+  const accentPale  = isAM ? C.amPale  : C.pmPale;
+
+  return (
+    <FadeSlide delay={0}>
+      <Animated.View style={[cd.wrap, { borderColor: accentColor, backgroundColor: accentPale, transform: [{ scale: pulseAnim }] }]}>
+        <Text style={cd.icon}>{isAM ? "☀" : "🌙"}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={[cd.title, { color: accentColor }]}>
+            {isAM ? "Morning Routine Done!" : "Night Routine Done!"}
+          </Text>
+          <Text style={cd.sub}>Great work! Your skin will thank you.</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 }}>
+            <Text style={cd.clockIcon}>⏱</Text>
+            <Text style={cd.countdown}>
+              Resets in <Text style={[cd.countdownBold, { color: accentColor }]}>{formatCountdown(timeLeft)}</Text>
+            </Text>
+          </View>
+        </View>
+        <TouchableOpacity onPress={onDismiss} style={cd.skipBtn}>
+          <Text style={cd.skipText}>Skip</Text>
+        </TouchableOpacity>
+      </Animated.View>
+    </FadeSlide>
+  );
+}
+const cd = StyleSheet.create({
+  wrap:          { flexDirection: "row", alignItems: "center", gap: 14, borderWidth: 1.5, borderRadius: 16, padding: 16, marginBottom: 20 },
+  icon:          { fontSize: 30 },
+  title:         { fontSize: 16, fontWeight: "800", marginBottom: 2 },
+  sub:           { color: C.creamDim, fontSize: 12 },
+  clockIcon:     { fontSize: 14 },
+  countdown:     { color: C.creamDim, fontSize: 13, fontWeight: "600" },
+  countdownBold: { fontWeight: "900" },
+  skipBtn:       { borderWidth: 1, borderColor: C.creamFaint, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  skipText:      { color: C.creamDim, fontSize: 11, fontWeight: "700" },
+});
+
+// ─────────────────────────────────────────────────────────────
 //  SCREEN
 // ─────────────────────────────────────────────────────────────
 export default function RoutineScreen() {
   const navigation = useNavigation();
   const { user } = useAuth();
 
-  const [routine, setRoutine] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [routine,    setRoutine]    = useState(null);
+  const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState("AM");
+  const [activeTab,  setActiveTab]  = useState("AM");
   const [savingStep, setSavingStep] = useState(null);
   const [generating, setGenerating] = useState(false);
   const [latestScan, setLatestScan] = useState(null);
-  const [genError, setGenError] = useState(null);
-  // ✅ FIX 2: track whether we're showing the auto-reset celebration
+  const [genError,   setGenError]   = useState(null);
+
+  // 6-hour cooldown state: { AM: timestamp|null, PM: timestamp|null }
+  const [cooldownAt, setCooldownAt] = useState({ AM: null, PM: null });
+  // 'celebrating' is still used for the brief flash before the banner appears
   const [celebrating, setCelebrating] = useState(false);
   const celebrateAnim = useRef(new Animated.Value(0)).current;
 
@@ -982,11 +1087,30 @@ export default function RoutineScreen() {
     }
   }, []);
 
+  // Load stored cooldown timestamps from AsyncStorage on focus
+  const loadCooldowns = useCallback(async () => {
+    try {
+      const uid = user?._id || user?.id || "guest";
+      const [amRaw, pmRaw] = await Promise.all([
+        AsyncStorage.getItem(COOLDOWN_KEY(uid, "AM")),
+        AsyncStorage.getItem(COOLDOWN_KEY(uid, "PM")),
+      ]);
+      const now = Date.now();
+      const amTs = amRaw ? parseInt(amRaw, 10) : null;
+      const pmTs = pmRaw ? parseInt(pmRaw, 10) : null;
+      setCooldownAt({
+        AM: amTs && now - amTs < COOLDOWN_MS ? amTs : null,
+        PM: pmTs && now - pmTs < COOLDOWN_MS ? pmTs : null,
+      });
+    } catch { /* ignore */ }
+  }, [user]);
+
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
       fetchRoutine();
-    }, [fetchRoutine]),
+      loadCooldowns();
+    }, [fetchRoutine, loadCooldowns]),
   );
 
   const onRefresh = useCallback(async () => {
@@ -1066,52 +1190,59 @@ export default function RoutineScreen() {
     [routine, activeTab],
   );
 
-  // ── Auto-reset when all steps complete ────────────────────
-  // ✅ FIX 2: watch for all-done state, show celebration for 2.5s,
-  // then reset all completed flags automatically. No manual reset btn.
+  // ── Cooldown: stamp + show banner when all steps complete ─
   const activeSteps = routine
-    ? activeTab === "AM"
-      ? (routine.morning ?? [])
-      : (routine.night ?? [])
+    ? activeTab === "AM" ? (routine.morning ?? []) : (routine.night ?? [])
     : [];
   const doneCount = activeSteps.filter((s) => s.completed).length;
-  const allDone = activeSteps.length > 0 && doneCount === activeSteps.length;
+  const allDone   = activeSteps.length > 0 && doneCount === activeSteps.length;
 
+  // Has an active (< 6h) cooldown for the current tab?
+  const activeCooldownTs = cooldownAt[activeTab];
+  const cooldownRemaining = activeCooldownTs
+    ? Math.max(0, COOLDOWN_MS - (Date.now() - activeCooldownTs))
+    : 0;
+  const inCooldown = cooldownRemaining > 0;
+
+  // When all steps become done, stamp the cooldown and reset steps locally
   useEffect(() => {
-    if (!allDone || celebrating) return;
+    if (!allDone || celebrating || inCooldown) return;
 
     setCelebrating(true);
-    Animated.timing(celebrateAnim, {
-      toValue: 1,
-      duration: 400,
-      useNativeDriver: true,
-    }).start();
+    Animated.timing(celebrateAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
 
-    const timer = setTimeout(() => {
-      // Fade out celebration
-      Animated.timing(celebrateAnim, {
-        toValue: 0,
-        duration: 400,
-        useNativeDriver: true,
-      }).start(() => {
-        // Reset all steps for this tab
+    const timer = setTimeout(async () => {
+      Animated.timing(celebrateAnim, { toValue: 0, duration: 300, useNativeDriver: true }).start(async () => {
+        // 1. Stamp the cooldown in storage
+        try {
+          const uid = user?._id || user?.id || "guest";
+          const now = Date.now();
+          await AsyncStorage.setItem(COOLDOWN_KEY(uid, activeTab), String(now));
+          setCooldownAt((prev) => ({ ...prev, [activeTab]: now }));
+        } catch { /* ignore */ }
+
+        // 2. Reset completed flags locally (steps can be re-done after cooldown)
         const timeOfDay = activeTab === "AM" ? "morning" : "night";
         setRoutine((prev) => {
           if (!prev) return prev;
-          return {
-            ...prev,
-            [timeOfDay]: prev[timeOfDay].map((s) => ({
-              ...s,
-              completed: false,
-            })),
-          };
+          return { ...prev, [timeOfDay]: prev[timeOfDay].map((s) => ({ ...s, completed: false })) };
         });
+
         setCelebrating(false);
       });
-    }, 2500);
+    }, 1800);
 
     return () => clearTimeout(timer);
   }, [allDone]);
+
+  // Clear cooldown for the current tab (manual skip or timer expired)
+  const clearCooldown = useCallback(async () => {
+    try {
+      const uid = user?._id || user?.id || "guest";
+      await AsyncStorage.removeItem(COOLDOWN_KEY(uid, activeTab));
+    } catch { /* ignore */ }
+    setCooldownAt((prev) => ({ ...prev, [activeTab]: null }));
+  }, [activeTab, user]);
 
   return (
     <AfricanBG>
@@ -1243,35 +1374,37 @@ export default function RoutineScreen() {
               </Text>
             </FadeSlide>
 
-            {/* Steps */}
-            {activeSteps.length === 0 ? (
-              <FadeSlide
-                delay={300}
-                style={{ alignItems: "center", paddingVertical: 30 }}
-              >
-                <Text
-                  style={{
-                    color: C.creamDim,
-                    fontSize: 14,
-                    textAlign: "center",
-                  }}
-                >
-                  No {activeTab === "AM" ? "morning" : "night"} steps in your
-                  routine.{"\n"}Pull to refresh or tap ↺ above.
-                </Text>
-              </FadeSlide>
+            {/* ── 6-hour cooldown banner — replaces steps while locked ── */}
+            {inCooldown ? (
+              <CooldownBanner
+                tab={activeTab}
+                remainingMs={cooldownRemaining}
+                onDismiss={clearCooldown}
+              />
             ) : (
-              activeSteps.map((item, i) => (
-                <StepCard
-                  key={`${activeTab}-${item.order ?? i}`}
-                  item={item}
-                  isAM={activeTab === "AM"}
-                  index={i}
-                  completed={!!item.completed}
-                  onToggle={() => toggleStep(item.order)}
-                  saving={savingStep === item.order}
-                />
-              ))
+              <>
+                {/* Steps */}
+                {activeSteps.length === 0 ? (
+                  <FadeSlide delay={300} style={{ alignItems: "center", paddingVertical: 30 }}>
+                    <Text style={{ color: C.creamDim, fontSize: 14, textAlign: "center" }}>
+                      No {activeTab === "AM" ? "morning" : "night"} steps in your
+                      routine.{"\n"}Pull to refresh or tap ↺ above.
+                    </Text>
+                  </FadeSlide>
+                ) : (
+                  activeSteps.map((item, i) => (
+                    <StepCard
+                      key={`${activeTab}-${item.order ?? i}`}
+                      item={item}
+                      isAM={activeTab === "AM"}
+                      index={i}
+                      completed={!!item.completed}
+                      onToggle={() => toggleStep(item.order)}
+                      saving={savingStep === item.order}
+                    />
+                  ))
+                )}
+              </>
             )}
 
             {/* ✅ FIX 2: Auto-reset celebration card — fades in when all done,
