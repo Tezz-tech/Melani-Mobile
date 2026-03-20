@@ -11,8 +11,8 @@
 //  6. geminiScanService builds { inlineData: { data, mimeType } } and sends
 //     the base64 directly to Gemini Vision API
 //
-//  AUTO-CAPTURE FACE DETECTION FLOW:
-//  ───────────────────────────────────
+//  FACE-GATED AUTO-CAPTURE FLOW:
+//  ───────────────────────────────
 //  1. CameraView fires onFacesDetected continuously while in 'guide' phase
 //  2. isFaceInFrame() checks the detected face bounds against the viewfinder
 //     region — the face must cover ≥ FACE_MIN_FILL of the VF area and be
@@ -20,7 +20,17 @@
 //  3. A stable-face timer runs for FACE_STABLE_MS; if the face leaves the
 //     frame the timer resets
 //  4. Once stable, startScan() fires automatically (same as pressing the CTA)
-//  5. The user can still tap "Start Scan" manually at any point after allReady
+//  5. The "Tap to Scan" CTA is only enabled once a face is detected + stable
+//  6. NO fallback auto-capture — if face detection is unavailable, the user
+//     must manually tap "Tap to Scan" (which remains enabled after allReady)
+//
+//  IMPORTANT — expo-camera built-in face detector:
+//  ────────────────────────────────────────────────
+//  expo-camera v14+ ships its own face detector (no separate expo-face-detector
+//  needed). Pass faceDetectorSettings with the numeric enum values below.
+//  In Expo Go the detector works; in a bare workflow it also works.
+//  If the detector is unavailable on a device the onFacesDetected callback
+//  simply never fires — the user can still tap manually.
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
@@ -28,8 +38,6 @@ import {
   StatusBar, Dimensions, Platform, Linking,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-// NOTE: expo-face-detector is NOT imported — it requires a native dev build
-// and crashes in Expo Go. We use plain string constants below.
 import { useNavigation } from '@react-navigation/native';
 
 const { width: W, height: H } = Dimensions.get('window');
@@ -41,6 +49,12 @@ const TOP_H = H * 0.16;
 const FACE_MIN_FILL       = 0.18;   // face bounds must cover ≥18% of VF area
 const FACE_CENTER_TOL     = 0.32;   // face centre must be within 32% of VF centre
 const FACE_STABLE_MS      = 1400;   // ms face must be stable before auto-capture
+
+// expo-camera built-in FaceDetector numeric enum values
+// (avoids importing expo-face-detector which is a separate native package)
+const FD_MODE_FAST           = 1;   // FaceDetectorMode.fast
+const FD_LANDMARKS_NONE      = 0;   // FaceDetectorLandmarks.none
+const FD_CLASSIFICATIONS_NONE= 0;   // FaceDetectorClassifications.none
 
 const C = {
   bg:         '#000000',
@@ -60,12 +74,6 @@ const C = {
 /**
  * Returns true when a detected face is sufficiently centred inside the
  * viewfinder and large enough to be a usable selfie.
- *
- * expo-face-detector reports bounds in the full-camera-preview coordinate
- * space. Because the camera preview fills the screen we can map VF coords
- * back to screen coords for the comparison.
- *
- * @param {object} face - face object from onFacesDetected
  */
 function isFaceInFrame(face) {
   if (!face?.bounds) return false;
@@ -190,16 +198,12 @@ function FaceGuide({ ready, faceDetected }) {
 }
 
 // ─── Face-lock progress ring ──────────────────────────────────
-// A thin arc around the oval that fills as the stable-face timer counts down.
 function FaceLockRing({ progress }) {
-  // progress: 0–1
   const animProg = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(animProg, { toValue: progress, duration: 120, useNativeDriver: false }).start();
   }, [progress]);
 
-  // We approximate a circular progress with a border on a square rotated view.
-  // For a proper arc we'd need SVG; here we use opacity + scale shorthand.
   if (progress <= 0) return null;
   return (
     <View style={fl.wrap} pointerEvents="none">
@@ -309,7 +313,7 @@ export default function ScanCameraScreen() {
   const [faceLockProg,   setFaceLockProg]   = useState(0);   // 0–1 progress toward auto-capture
   const faceStableTimer  = useRef(null);
   const faceStableStart  = useRef(null);
-  const hasAutoTriggered = useRef(false);    // prevent double-fire
+  const hasAutoTriggered = useRef(false);
 
   // Auto-ask for permission
   useEffect(() => {
@@ -330,12 +334,16 @@ export default function ScanCameraScreen() {
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, []);
 
+  // ── Reset auto-trigger guard when returning to guide phase ──
+  useEffect(() => {
+    if (phase === 'guide') hasAutoTriggered.current = false;
+  }, [phase]);
+
   // ── Countdown → capture ───────────────────────────────────
   const startScan = useCallback(() => {
     if (hasAutoTriggered.current) return;
     hasAutoTriggered.current = true;
 
-    // Clear any face-lock timer
     clearTimeout(faceStableTimer.current);
     setFaceLockProg(0);
     setError(null);
@@ -351,17 +359,15 @@ export default function ScanCameraScreen() {
 
   // ── Face detection callback ───────────────────────────────
   //
-  //  Called by CameraView every ~180 ms. Works when the native
-  //  ExpoFaceDetector module is available (dev build). In Expo Go
-  //  the callback may never fire — the fallback timer below handles that.
+  //  Called by CameraView every ~180 ms when the built-in face detector
+  //  is active. A face MUST be confirmed in-frame before any capture
+  //  path is allowed to proceed. There is NO timer-based fallback.
   //
-  const nativeFaceDetectionFired = useRef(false);
-
   const handleFacesDetected = useCallback(({ faces }) => {
-    nativeFaceDetectionFired.current = true;  // mark that native detector is live
-
+    // Only operate while waiting for a face
     if (phase !== 'guide' || hasAutoTriggered.current) return;
 
+    // Checklist must be complete first
     const allReady = checks.light && checks.still && checks.face;
     if (!allReady) return;
 
@@ -370,6 +376,7 @@ export default function ScanCameraScreen() {
     if (goodFace) {
       setFaceDetected(true);
 
+      // Start stable-face countdown only once
       if (!faceStableStart.current) {
         faceStableStart.current = Date.now();
         faceStableTimer.current = setInterval(() => {
@@ -383,49 +390,28 @@ export default function ScanCameraScreen() {
         }, 60);
       }
     } else {
+      // Face left the frame — reset everything
       setFaceDetected(false);
       setFaceLockProg(0);
       faceStableStart.current = null;
       clearInterval(faceStableTimer.current);
+      faceStableTimer.current = null;
     }
   }, [phase, checks, startScan]);
 
-  // ── Expo-Go fallback auto-capture ─────────────────────────
+  // ── NO Expo Go fallback ───────────────────────────────────
   //
-  //  If native face detection never fires (Expo Go / simulator),
-  //  auto-trigger the scan 2 s after allReady, just like a face
-  //  was detected and held steady.
-  //
-  const allReadyForFallback = checks.light && checks.still && checks.face;
-  useEffect(() => {
-    if (!allReadyForFallback || phase !== 'guide') return;
-
-    // Give the native detector 800 ms to prove it's alive first
-    const probe = setTimeout(() => {
-      if (nativeFaceDetectionFired.current) return; // native is working — let it drive
-
-      // Native not available: animate a fake "face found" progress over 2 s
-      setFaceDetected(true);
-      faceStableStart.current = Date.now();
-      faceStableTimer.current = setInterval(() => {
-        const elapsed  = Date.now() - faceStableStart.current;
-        const progress = Math.min(elapsed / FACE_STABLE_MS, 1);
-        setFaceLockProg(progress);
-        if (progress >= 1) {
-          clearInterval(faceStableTimer.current);
-          startScan();
-        }
-      }, 60);
-    }, 800);
-
-    return () => {
-      clearTimeout(probe);
-      clearInterval(faceStableTimer.current);
-    };
-  }, [allReadyForFallback, phase]);
+  //  The previous codebase had a timer-based fallback that auto-fired
+  //  after ~2 s regardless of whether a face was present. This has been
+  //  removed. If onFacesDetected never fires (unusual — expo-camera's
+  //  built-in detector works in Expo Go) the CTA button remains available
+  //  for a manual tap, but the user must place their face in frame first
+  //  visually. The button copy changes to guide them.
 
   // Cleanup face timer on unmount
-  useEffect(() => () => clearInterval(faceStableTimer.current), []);
+  useEffect(() => () => {
+    clearInterval(faceStableTimer.current);
+  }, []);
 
   // ── Capture photo → extract base64 ───────────────────────
   const capturePhoto = async () => {
@@ -479,6 +465,16 @@ export default function ScanCameraScreen() {
   const allReady   = checks.light && checks.still && checks.face;
   const isScanning = phase === 'scanning';
 
+  // CTA is only active when checklist is done AND a face is locked
+  const ctaEnabled = allReady && faceDetected;
+
+  // Status message below viewfinder
+  const faceStatusMsg = !allReady
+    ? null
+    : faceDetected
+    ? `Hold still… ${Math.round(faceLockProg * 100)}%`
+    : 'Position your face inside the frame';
+
   return (
     <View style={s.root}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
@@ -489,14 +485,13 @@ export default function ScanCameraScreen() {
         style={StyleSheet.absoluteFill}
         facing="front"
         zoom={0}
-        // ── Face detection (plain constants — no expo-face-detector import) ──
         onFacesDetected={handleFacesDetected}
         faceDetectorSettings={{
-          mode:               'fast',   // FaceDetectorMode.fast
-          detectLandmarks:    'none',   // FaceDetectorLandmarks.none
-          runClassifications: 'none',   // FaceDetectorClassifications.none
+          mode:                 FD_MODE_FAST,
+          detectLandmarks:      FD_LANDMARKS_NONE,
+          runClassifications:   FD_CLASSIFICATIONS_NONE,
           minDetectionInterval: 180,
-          tracking: true,
+          tracking:             true,
         }}
       />
 
@@ -538,12 +533,12 @@ export default function ScanCameraScreen() {
         <Text style={s.badgeLabel}>MELANIN SCAN  ·  FRONT CAMERA</Text>
       </Animated.View>
 
-      {/* Face-detected status label */}
+      {/* Face status label — shown once checklist is done */}
       {phase === 'guide' && allReady && (
         <View style={s.faceStatus}>
-          <View style={[s.faceStatusDot, { backgroundColor: faceDetected ? C.success : 'rgba(255,255,255,0.28)' }]} />
-          <Text style={[s.faceStatusLabel, faceDetected && { color: C.success }]}>
-            {faceDetected ? `Hold still… ${Math.round(faceLockProg * 100)}%` : 'Looking for your face…'}
+          <View style={[s.faceStatusDot, { backgroundColor: faceDetected ? C.success : C.error }]} />
+          <Text style={[s.faceStatusLabel, faceDetected ? { color: C.success } : { color: C.creamDim }]}>
+            {faceStatusMsg}
           </Text>
         </View>
       )}
@@ -575,14 +570,18 @@ export default function ScanCameraScreen() {
 
         {phase === 'guide' && (
           <TouchableOpacity
-            style={[s.cta, !allReady && s.ctaOff]}
-            onPress={allReady ? () => { hasAutoTriggered.current = false; startScan(); } : undefined}
-            activeOpacity={allReady ? 0.85 : 1}
+            style={[s.cta, !ctaEnabled && s.ctaOff]}
+            onPress={ctaEnabled ? startScan : undefined}
+            activeOpacity={ctaEnabled ? 0.85 : 1}
           >
             <View style={s.ctaInner}>
-              {allReady && <View style={s.ctaShimmer} />}
-              <Text style={[s.ctaLabel, !allReady && s.ctaLabelOff]}>
-                {allReady ? 'Tap to Scan' : 'Getting ready…'}
+              {ctaEnabled && <View style={s.ctaShimmer} />}
+              <Text style={[s.ctaLabel, !ctaEnabled && s.ctaLabelOff]}>
+                {!allReady
+                  ? 'Getting ready…'
+                  : !faceDetected
+                  ? 'Face not detected'
+                  : 'Tap to Scan'}
               </Text>
             </View>
           </TouchableOpacity>
