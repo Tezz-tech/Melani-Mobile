@@ -624,7 +624,6 @@ const ic = StyleSheet.create({
 // ── Routine preview ───────────────────────────────────────────
 function RoutinePreview({ routine }) {
   const [tab, setTab] = useState("morning");
-  // Support both flat string arrays AND step objects from the full API result
   const rawSteps =
     tab === "morning" ? routine?.morning || [] : routine?.night || [];
   const steps = rawSteps.map((s) =>
@@ -776,27 +775,174 @@ function LoadingSkeleton() {
   );
 }
 
+// ── Face Not Found screen ─────────────────────────────────────
+function FaceNotFoundScreen({ onRetry, onHome }) {
+  const pulse = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1.08, duration: 900, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1,    duration: 900, useNativeDriver: true }),
+      ]),
+    ).start();
+  }, []);
+
+  return (
+    <AfricanBG>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <View style={fn.wrap}>
+        {/* Animated face icon */}
+        <Animated.View style={[fn.iconWrap, { transform: [{ scale: pulse }] }]}>
+          <View style={fn.iconRing}>
+            <Text style={fn.icon}>◎</Text>
+          </View>
+          {/* Corner brackets around the icon */}
+          {[
+            { top: 0, left: 0,  borderRightWidth: 0, borderBottomWidth: 0 },
+            { top: 0, right: 0, borderLeftWidth:  0, borderBottomWidth: 0 },
+            { bottom: 0, left: 0,  borderRightWidth: 0, borderTopWidth: 0 },
+            { bottom: 0, right: 0, borderLeftWidth:  0, borderTopWidth: 0 },
+          ].map((corner, i) => (
+            <View key={i} style={[fn.corner, corner]} />
+          ))}
+        </Animated.View>
+
+        {/* Text */}
+        <FadeSlide delay={100}>
+          <Text style={fn.title}>No Face Detected</Text>
+        </FadeSlide>
+        <FadeSlide delay={200}>
+          <Text style={fn.body}>
+            Our AI couldn't find a face in your photo. For the best results,
+            make sure your face is centred in the frame, well-lit, and the
+            camera is steady before scanning.
+          </Text>
+        </FadeSlide>
+
+        {/* Tips */}
+        <FadeSlide delay={320} style={fn.tipsCard}>
+          {[
+            { icon: "💡", tip: "Use good natural light — avoid harsh shadows" },
+            { icon: "◎",  tip: "Centre your face fully inside the oval guide" },
+            { icon: "🤳", tip: "Hold the phone at eye level, arm's length away" },
+            { icon: "🚫", tip: "Remove sunglasses, hats or anything covering your face" },
+          ].map(({ icon, tip }, i) => (
+            <View key={i} style={fn.tipRow}>
+              <Text style={fn.tipIcon}>{icon}</Text>
+              <Text style={fn.tipText}>{tip}</Text>
+            </View>
+          ))}
+        </FadeSlide>
+
+        {/* CTAs */}
+        <FadeSlide delay={480} style={{ width: "100%" }}>
+          <GoldButton
+            label="Try Again"
+            onPress={onRetry}
+            style={{ marginBottom: 12 }}
+          />
+          <TouchableOpacity style={fn.ghostBtn} onPress={onHome}>
+            <Text style={fn.ghostBtnText}>Go Home</Text>
+          </TouchableOpacity>
+        </FadeSlide>
+      </View>
+    </AfricanBG>
+  );
+}
+const fn = StyleSheet.create({
+  wrap: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 28,
+    paddingTop: 20,
+  },
+  iconWrap: {
+    width: 120,
+    height: 120,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 28,
+  },
+  iconRing: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    borderWidth: 2.5,
+    borderColor: "rgba(224,92,58,0.55)",
+    backgroundColor: "rgba(224,92,58,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  icon: { color: C.error, fontSize: 38 },
+  corner: {
+    position: "absolute",
+    width: 18,
+    height: 18,
+    borderWidth: 2,
+    borderColor: C.error,
+    borderRadius: 3,
+  },
+  title: {
+    color: C.cream,
+    fontSize: 26,
+    fontWeight: "900",
+    textAlign: "center",
+    marginBottom: 12,
+    letterSpacing: 0.2,
+  },
+  body: {
+    color: C.creamDim,
+    fontSize: 14,
+    lineHeight: 22,
+    textAlign: "center",
+    marginBottom: 28,
+  },
+  tipsCard: {
+    width: "100%",
+    backgroundColor: C.bgCard,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 16,
+    padding: 18,
+    gap: 14,
+    marginBottom: 32,
+  },
+  tipRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  tipIcon: { fontSize: 16, width: 24, textAlign: "center" },
+  tipText: { color: C.creamDim, fontSize: 13, lineHeight: 19, flex: 1 },
+  ghostBtn: {
+    borderWidth: 1.5,
+    borderColor: C.border,
+    borderRadius: 14,
+    paddingVertical: 16,
+    alignItems: "center",
+  },
+  ghostBtnText: { color: C.creamDim, fontSize: 15, fontWeight: "600" },
+});
+
 // ─────────────────────────────────────────────────────────────
 //  SCREEN
 // ─────────────────────────────────────────────────────────────
-//
-//  Params (from ScanProcessingScreen or HomeScreen):
-//    - scanId  : string — used to fetch full scan from API
-//    - result  : object — passed directly when coming from processing
-//                         (avoids a second round-trip right after upload)
-//
-//  Priority:
-//   1. Use `result` if passed (fresh from upload)
-//   2. Else fetch by `scanId` from GET /scans/:id
-//
 export default function ScanResultsScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const { scanId, result: passedResult } = route.params || {};
 
-  const [result, setResult] = useState(passedResult || null);
-  const [loading, setLoading] = useState(!passedResult);
-  const [error, setError] = useState(null);
+  const [result,      setResult]      = useState(passedResult || null);
+  const [loading,     setLoading]     = useState(!passedResult);
+  const [error,       setError]       = useState(null);
+  const [faceError,   setFaceError]   = useState(false);
+
+  // ── Detect face-not-found from a passed result ────────────
+  // ScanProcessingScreen may pass result directly. If the backend
+  // returned NO_FACE_DETECTED we receive it as an error string.
+  useEffect(() => {
+    if (passedResult && passedResult === 'NO_FACE_DETECTED') {
+      setFaceError(true);
+      setLoading(false);
+    }
+  }, []);
 
   // ── Fetch scan by ID if not passed directly ───────────────
   const fetchScan = useCallback(async () => {
@@ -809,22 +955,35 @@ export default function ScanResultsScreen() {
       const data = await ScanAPI.getScan(scanId);
       setResult(data);
     } catch (err) {
-      setError(err.message || "Could not load scan results.");
+      // Check for the specific face-not-detected code
+      if (err.message === 'NO_FACE_DETECTED' || err.code === 'NO_FACE_DETECTED') {
+        setFaceError(true);
+      } else {
+        setError(err.message || "Could not load scan results.");
+      }
     } finally {
       setLoading(false);
     }
   }, [scanId]);
 
   useEffect(() => {
-    if (!passedResult) {
-      fetchScan();
-    }
+    if (!passedResult) fetchScan();
   }, []);
 
   // ── Loading ───────────────────────────────────────────────
   if (loading) return <LoadingSkeleton />;
 
-  // ── Error ─────────────────────────────────────────────────
+  // ── Face not detected ─────────────────────────────────────
+  if (faceError) {
+    return (
+      <FaceNotFoundScreen
+        onRetry={() => navigation.navigate("ScanCamera")}
+        onHome={() => navigation.navigate("Main")}
+      />
+    );
+  }
+
+  // ── Generic error ─────────────────────────────────────────
   if (error || !result) {
     return (
       <AfricanBG>
@@ -896,7 +1055,6 @@ export default function ScanResultsScreen() {
   }
 
   // ── Normalise API fields ──────────────────────────────────
-  //  Backend may use different casing/nesting. Map to what our UI expects.
   const skinType = result.skinType || result.skin_type || "Unknown";
   const confidence = result.confidence || "High";
   const score = result.overallScore ?? result.score ?? 0;
@@ -1053,7 +1211,6 @@ export default function ScanResultsScreen() {
 
 const s = StyleSheet.create({
   scroll: { paddingTop: 60, paddingHorizontal: 22 },
-
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -1089,7 +1246,6 @@ const s = StyleSheet.create({
     justifyContent: "center",
   },
   shareIcon: { color: C.gold, fontSize: 18, fontWeight: "700" },
-
   heroCard: {
     backgroundColor: C.bgCard,
     borderWidth: 1.5,
@@ -1123,7 +1279,6 @@ const s = StyleSheet.create({
     marginBottom: 6,
   },
   heroSub: { color: C.creamDim, fontSize: 12 },
-
   section: { marginBottom: 26 },
   ctaBlock: { marginBottom: 10 },
   secondaryBtn: {
