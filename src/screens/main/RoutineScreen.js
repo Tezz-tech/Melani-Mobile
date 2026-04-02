@@ -57,6 +57,10 @@ import {
   RefreshControl,
   Dimensions,
   ActivityIndicator,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../../store/AuthContext";
@@ -418,44 +422,180 @@ function StreakBadge({ days }) {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  Product card
+//  Product card — rich version with sourcing links
 // ─────────────────────────────────────────────────────────────
+const STORE_ICONS = { Jumia: '🛒', Konga: '🛍', GlowRoad: '✦', default: '🔗' };
+
 function ProductCard({ product }) {
   if (!product) return null;
-  const hasPrice = product.priceNGN != null;
+  const [expanded, setExpanded] = useState(false);
+  const expandAnim = useRef(new Animated.Value(0)).current;
+
+  const toggleExpand = () => {
+    setExpanded((e) => {
+      Animated.timing(expandAnim, { toValue: e ? 0 : 1, duration: 240, useNativeDriver: false }).start();
+      return !e;
+    });
+  };
+
+  const hasPrice    = product.priceNGN != null;
+  const isNigerian  = (product.brandOrigin || '').toLowerCase().includes('nigerian') ||
+                      (product.brandOrigin || '').toLowerCase().includes('african') ||
+                      (product.brandOrigin || '').toLowerCase().includes('ghana');
+  const links       = Array.isArray(product.affiliateLinks) ? product.affiliateLinks : [];
+
+  const [detailH, setDetailH] = useState(0);
+  const detailHAnim = expandAnim.interpolate({ inputRange: [0, 1], outputRange: [0, detailH || 220] });
+  const detailOp    = expandAnim.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 0, 1] });
+
   return (
     <View style={pc.root}>
-      <View style={pc.header}>
-        <View style={{ flex: 1 }}>
-          <Text style={pc.brand}>{(product.brand || "").toUpperCase()}</Text>
-          <Text style={pc.name}>{product.name || "—"}</Text>
+      {/* ── Header row ── */}
+      <TouchableOpacity onPress={toggleExpand} activeOpacity={0.85}>
+        <View style={pc.header}>
+          <View style={{ flex: 1, gap: 2 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={pc.brand}>{(product.brand || '').toUpperCase()}</Text>
+              {isNigerian && (
+                <View style={pc.originBadge}>
+                  <Text style={pc.originText}>🌍 Local</Text>
+                </View>
+              )}
+            </View>
+            <Text style={pc.name}>{product.name || '—'}</Text>
+          </View>
+          <View style={{ alignItems: 'flex-end', gap: 4 }}>
+            {hasPrice && <Text style={pc.price}>₦{Number(product.priceNGN).toLocaleString()}</Text>}
+            <Text style={pc.expandHint}>{expanded ? '▲' : '▼'}</Text>
+          </View>
         </View>
-        {hasPrice && <Text style={pc.price}>₦{Number(product.priceNGN).toLocaleString()}</Text>}
-      </View>
-      {product.keyIngredients?.length > 0 && (
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 5, marginTop: 8 }}>
-          {product.keyIngredients.map((ing, i) => (
-            <View key={i} style={pc.ingPill}><Text style={pc.ingText}>{ing}</Text></View>
-          ))}
+
+        {/* ── Description ── */}
+        {product.description ? (
+          <Text style={pc.desc} numberOfLines={expanded ? 0 : 2}>{product.description}</Text>
+        ) : null}
+
+        {/* ── Key ingredients chips ── */}
+        {product.keyIngredients?.length > 0 && (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
+            {product.keyIngredients.map((ing, i) => (
+              <View key={i} style={pc.ingPill}><Text style={pc.ingText}>{ing}</Text></View>
+            ))}
+          </View>
+        )}
+
+        {/* ── Quick meta row ── */}
+        <View style={pc.metaRow}>
+          {product.frequency ? (
+            <View style={pc.metaChip}>
+              <Text style={pc.metaIcon}>🕐</Text>
+              <Text style={pc.metaText}>{product.frequency}</Text>
+            </View>
+          ) : null}
+          {product.amountToUse ? (
+            <View style={pc.metaChip}>
+              <Text style={pc.metaIcon}>⚗</Text>
+              <Text style={pc.metaText}>{product.amountToUse}</Text>
+            </View>
+          ) : null}
+          {product.rating != null && (
+            <View style={[pc.metaChip, { marginLeft: 'auto' }]}>
+              <Text style={pc.ratingText}>★ {Number(product.rating).toFixed(1)}</Text>
+            </View>
+          )}
         </View>
-      )}
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
-        {product.availability ? <Text style={pc.avail}>{product.availability}</Text> : <View />}
-        {product.rating != null && <Text style={pc.rating}>★ {product.rating.toFixed(1)}</Text>}
-      </View>
+      </TouchableOpacity>
+
+      {/* ── Expandable detail ── */}
+      <Animated.View style={{ height: detailHAnim, overflow: 'hidden' }}>
+        {/* invisible measurer */}
+        <View
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, opacity: 0, zIndex: -1 }}
+          onLayout={(e) => {
+            const h = e.nativeEvent.layout.height;
+            if (h > 0 && h !== detailH) setDetailH(h);
+          }}
+        >
+          <View style={{ paddingTop: 12 }}>
+            {product.howToUse ? (
+              <View style={pc.howToBox}>
+                <Text style={pc.sectionTitle}>HOW TO USE</Text>
+                <Text style={pc.howToText}>{product.howToUse}</Text>
+              </View>
+            ) : null}
+            {links.length > 0 && (
+              <View style={{ marginTop: 10 }}>
+                <Text style={pc.sectionTitle}>BUY IN NIGERIA</Text>
+                {links.map((lnk, li) => (
+                  <View key={li} style={pc.storeRow}>
+                    <Text style={pc.storeIcon}>{STORE_ICONS[lnk.store] || STORE_ICONS.default}</Text>
+                    <Text style={pc.storeName}>{lnk.store}</Text>
+                    {lnk.priceNGN != null && (
+                      <Text style={pc.storePrice}>₦{Number(lnk.priceNGN).toLocaleString()}</Text>
+                    )}
+                  </View>
+                ))}
+              </View>
+            )}
+            {!links.length && product.availability ? (
+              <Text style={[pc.howToText, { marginTop: 8 }]}>Available at: {product.availability}</Text>
+            ) : null}
+          </View>
+        </View>
+        {/* actual animated content */}
+        <Animated.View style={{ opacity: detailOp, paddingTop: 12 }}>
+          {product.howToUse ? (
+            <View style={pc.howToBox}>
+              <Text style={pc.sectionTitle}>HOW TO USE</Text>
+              <Text style={pc.howToText}>{product.howToUse}</Text>
+            </View>
+          ) : null}
+          {links.length > 0 && (
+            <View style={{ marginTop: 10 }}>
+              <Text style={pc.sectionTitle}>BUY IN NIGERIA</Text>
+              {links.map((lnk, li) => (
+                <View key={li} style={pc.storeRow}>
+                  <Text style={pc.storeIcon}>{STORE_ICONS[lnk.store] || STORE_ICONS.default}</Text>
+                  <Text style={pc.storeName}>{lnk.store}</Text>
+                  {lnk.priceNGN != null && (
+                    <Text style={pc.storePrice}>₦{Number(lnk.priceNGN).toLocaleString()}</Text>
+                  )}
+                </View>
+              ))}
+            </View>
+          )}
+          {!links.length && product.availability ? (
+            <Text style={[pc.howToText, { marginTop: 8 }]}>Available at: {product.availability}</Text>
+          ) : null}
+        </Animated.View>
+      </Animated.View>
     </View>
   );
 }
 const pc = StyleSheet.create({
-  root:   { backgroundColor: "rgba(200,134,10,0.06)", borderWidth: 1, borderColor: "rgba(200,134,10,0.20)", borderRadius: 10, padding: 12, marginTop: 8 },
-  header: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 8 },
-  brand:  { color: C.creamFaint, fontSize: 9, fontWeight: "700", letterSpacing: 1, marginBottom: 2 },
-  name:   { color: C.cream, fontSize: 13, fontWeight: "700" },
-  price:  { color: C.gold, fontSize: 13, fontWeight: "800", flexShrink: 0 },
-  ingPill:{ backgroundColor: C.goldPale, borderWidth: 1, borderColor: C.border, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
-  ingText:{ color: C.creamDim, fontSize: 10, fontWeight: "600" },
-  avail:  { color: C.creamDim, fontSize: 11 },
-  rating: { color: C.amColor, fontSize: 11, fontWeight: "700" },
+  root:        { backgroundColor: 'rgba(200,134,10,0.06)', borderWidth: 1, borderColor: 'rgba(200,134,10,0.22)', borderRadius: 12, padding: 13, marginTop: 10 },
+  header:      { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 6 },
+  brand:       { color: C.creamFaint, fontSize: 9, fontWeight: '700', letterSpacing: 1 },
+  name:        { color: C.cream, fontSize: 13, fontWeight: '800' },
+  originBadge: { backgroundColor: 'rgba(93,190,138,0.14)', borderWidth: 1, borderColor: 'rgba(93,190,138,0.35)', borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1 },
+  originText:  { color: '#5DBE8A', fontSize: 9, fontWeight: '700' },
+  price:       { color: C.gold, fontSize: 13, fontWeight: '900', flexShrink: 0 },
+  expandHint:  { color: C.creamFaint, fontSize: 9, fontWeight: '700' },
+  desc:        { color: C.creamDim, fontSize: 12, lineHeight: 17, marginBottom: 4 },
+  ingPill:     { backgroundColor: C.goldPale, borderWidth: 1, borderColor: C.border, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
+  ingText:     { color: C.creamDim, fontSize: 10, fontWeight: '600' },
+  metaRow:     { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 9, alignItems: 'center' },
+  metaChip:    { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(245,222,179,0.06)', borderWidth: 1, borderColor: C.border, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
+  metaIcon:    { fontSize: 11 },
+  metaText:    { color: C.creamDim, fontSize: 10, fontWeight: '600' },
+  ratingText:  { color: C.amColor, fontSize: 11, fontWeight: '800' },
+  sectionTitle:{ color: C.gold, fontSize: 9, fontWeight: '700', letterSpacing: 1, marginBottom: 6 },
+  howToBox:    { backgroundColor: 'rgba(245,222,179,0.04)', borderLeftWidth: 2, borderLeftColor: C.gold, borderRadius: 8, padding: 10 },
+  howToText:   { color: C.creamDim, fontSize: 12, lineHeight: 18 },
+  storeRow:    { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: C.border },
+  storeIcon:   { fontSize: 14, width: 22 },
+  storeName:   { color: C.cream, fontSize: 12, fontWeight: '700', flex: 1 },
+  storePrice:  { color: C.gold, fontSize: 12, fontWeight: '800' },
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -499,11 +639,14 @@ function StepCard({ item, isAM, index, completed, onToggle, saving }) {
     ? item.keyIngredient.split(",").map((s) => s.trim()).filter(Boolean)
     : [];
 
-  const stepProducts = Array.isArray(item.products) ? item.products : [];
+  // Support both 'matchedProducts' (from server) and legacy 'products' field
+  const stepProducts = Array.isArray(item.matchedProducts)
+    ? item.matchedProducts
+    : Array.isArray(item.products) ? item.products : [];
 
-  const instructionsH    = 24 + howToSteps.length * 44 + 40;
-  const expandedContentH = instructionsH + stepProducts.length * 120;
-  const extraH  = expandAnim.interpolate({ inputRange: [0, 1], outputRange: [0, expandedContentH] });
+  // ── Layout-driven expand: measure real content height ─────
+  const [contentHeight, setContentHeight] = useState(0);
+  const extraH  = expandAnim.interpolate({ inputRange: [0, 1], outputRange: [0, contentHeight || 200] });
   const extraOp = expandAnim.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0, 0, 1] });
 
   return (
@@ -543,6 +686,41 @@ function StepCard({ item, isAM, index, completed, onToggle, saving }) {
             )}
 
             <Animated.View style={{ height: extraH, overflow: "hidden" }}>
+              {/* Hidden measurer — renders off-screen to capture real height */}
+              <View
+                style={{ position: "absolute", top: 0, left: 0, right: 0, opacity: 0, zIndex: -1 }}
+                onLayout={(e) => {
+                  const h = e.nativeEvent.layout.height;
+                  if (h > 0 && h !== contentHeight) setContentHeight(h);
+                }}
+              >
+                <View style={{ paddingTop: 12 }}>
+                  <View style={sc.amountRow}>
+                    <Text style={sc.amountIcon}>⚗</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={sc.amountLabel}>HOW MUCH TO USE</Text>
+                      <Text style={sc.amountValue}>{amountGuide}</Text>
+                    </View>
+                  </View>
+                  <View style={sc.sectionHeader}><View style={sc.sectionBar} /><Text style={sc.sectionTitle}>HOW TO USE</Text></View>
+                  {howToSteps.map((step, si) => (
+                    <View key={si} style={sc.instrRow}>
+                      <View style={[sc.instrNum, { backgroundColor: accentPale, borderColor: accentColor }]}>
+                        <Text style={[sc.instrNumText, { color: accentColor }]}>{si + 1}</Text>
+                      </View>
+                      <Text style={sc.instrText}>{step}</Text>
+                    </View>
+                  ))}
+                  {item.notes ? <View style={sc.whyBox}><Text style={sc.whyLabel}>💡  WHY THIS STEP</Text><Text style={sc.why}>{item.notes}</Text></View> : null}
+                  {stepProducts.length > 0 && (
+                    <View style={{ marginTop: 12 }}>
+                      <View style={sc.sectionHeader}><View style={sc.sectionBar} /><Text style={sc.sectionTitle}>RECOMMENDED PRODUCTS</Text></View>
+                      {stepProducts.map((prod, pi) => <ProductCard key={pi} product={prod} />)}
+                    </View>
+                  )}
+                </View>
+              </View>
+              {/* Actual animated content */}
               <Animated.View style={{ opacity: extraOp, paddingTop: 12 }}>
 
                 <View style={sc.amountRow}>
@@ -827,6 +1005,13 @@ export default function RoutineScreen() {
   const [latestScan, setLatestScan] = useState(null);
   const [genError,   setGenError]   = useState(null);
 
+  // ── Add-my-product modal state ────────────────────────────
+  const [showAddProduct, setShowAddProduct] = useState(false);
+  const [productInput,   setProductInput]   = useState('');
+  const [fittingProduct, setFittingProduct] = useState(false);
+  const [fitSuccess,     setFitSuccess]     = useState(null);
+  const [fitError,       setFitError]       = useState(null);
+
   // completionDates: { AM: "YYYY-MM-DD" | null, PM: "YYYY-MM-DD" | null }
   const [completionDates, setCompletionDates] = useState({ AM: null, PM: null });
 
@@ -970,6 +1155,30 @@ export default function RoutineScreen() {
   const generateRoutine = useCallback(() => {
     regenerateFromScan(latestScan);
   }, [latestScan, regenerateFromScan]);
+
+  // ── Fit a user-owned product into the routine ────────────────
+  const handleFitProduct = useCallback(async () => {
+    if (!productInput.trim()) return;
+    setFittingProduct(true);
+    setFitError(null);
+    setFitSuccess(null);
+    try {
+      const result = await RoutineAPI.fitProduct(productInput.trim());
+      if (result?.data?.routine) {
+        setRoutine(applyDailyReset(result.data.routine, completionDates));
+      } else {
+        const r = await RoutineAPI.getMyRoutine();
+        if (r) setRoutine(applyDailyReset(r, completionDates));
+      }
+      setFitSuccess(result?.message || `"${productInput.trim()}" added to your routine!`);
+      setProductInput('');
+      setTimeout(() => { setShowAddProduct(false); setFitSuccess(null); }, 2200);
+    } catch (err) {
+      setFitError(err?.message || 'Could not fit this product. Please try again.');
+    } finally {
+      setFittingProduct(false);
+    }
+  }, [productInput, completionDates]);
 
   // ── Toggle a step ─────────────────────────────────────────
   const toggleStep = useCallback(
@@ -1181,6 +1390,7 @@ export default function RoutineScreen() {
               <CooldownBanner tab={activeTab} remainingMs={cooldownRemaining} onDismiss={clearCooldown} />
             )}
 
+            {/* ── Routine steps ── */}
             {activeSteps.length === 0 ? (
               <FadeSlide delay={300} style={{ alignItems: "center", paddingVertical: 30 }}>
                 <Text style={{ color: C.creamDim, fontSize: 14, textAlign: "center" }}>
@@ -1188,9 +1398,6 @@ export default function RoutineScreen() {
                 </Text>
               </FadeSlide>
             ) : (
-              // FIX 7: steps always rendered (even during cooldown) so user
-              // can see their completed checkboxes. They are non-interactive
-              // during cooldown since tapping a checked step would uncheck it.
               activeSteps.map((item, i) => (
                 <StepCard
                   key={`${activeTab}-${item.order ?? i}`}
@@ -1198,7 +1405,6 @@ export default function RoutineScreen() {
                   isAM={activeTab === "AM"}
                   index={i}
                   completed={!!item.completed}
-                  // Disable toggling during cooldown to preserve the visual state
                   onToggle={inCooldown ? () => {} : () => toggleStep(item.order)}
                   saving={savingStep === item.order}
                 />
@@ -1219,6 +1425,22 @@ export default function RoutineScreen() {
               </Animated.View>
             )}
 
+            {/* ── Add My Product button ── */}
+            <FadeSlide delay={700} style={{ marginTop: 6, marginBottom: 4 }}>
+              <TouchableOpacity
+                style={s.addProductBtn}
+                onPress={() => { setShowAddProduct(true); setFitError(null); setFitSuccess(null); }}
+                activeOpacity={0.85}
+              >
+                <Text style={s.addProductBtnIcon}>+</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.addProductBtnText}>I already use a product</Text>
+                  <Text style={s.addProductBtnSub}>Tap to add it to your routine</Text>
+                </View>
+                <Text style={{ color: C.gold, fontSize: 16 }}>→</Text>
+              </TouchableOpacity>
+            </FadeSlide>
+
             {routine.weeklySchedule?.length > 0 && (
               <WeeklySchedule schedule={routine.weeklySchedule} />
             )}
@@ -1227,6 +1449,70 @@ export default function RoutineScreen() {
 
         <View style={{ height: 100 }} />
       </ScrollView>
+
+      {/* ── Add-My-Product Modal ── */}
+      <Modal
+        visible={showAddProduct}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowAddProduct(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={apm.overlay}
+        >
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setShowAddProduct(false)} />
+          <View style={apm.sheet}>
+            <View style={apm.handle} />
+            <Text style={apm.title}>Add Your Product 🧪</Text>
+            <Text style={apm.subtitle}>
+              Already using a product? Type its name and we’ll figure out where it fits in your daily routine.
+            </Text>
+
+            <TextInput
+              style={apm.input}
+              placeholder="e.g. Neutrogena Hydro Boost, Dove Body Lotion..."
+              placeholderTextColor={C.creamFaint}
+              value={productInput}
+              onChangeText={setProductInput}
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={handleFitProduct}
+            />
+
+            {fitSuccess && (
+              <View style={apm.successBox}>
+                <Text style={apm.successText}>✓  {fitSuccess}</Text>
+              </View>
+            )}
+            {fitError && (
+              <View style={apm.errorBox}>
+                <Text style={apm.errorText}>⚠  {fitError}</Text>
+              </View>
+            )}
+
+            <View style={apm.btnRow}>
+              <TouchableOpacity
+                style={apm.cancelBtn}
+                onPress={() => { setShowAddProduct(false); setProductInput(''); setFitError(null); }}
+              >
+                <Text style={apm.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[apm.fitBtn, (!productInput.trim() || fittingProduct) && { opacity: 0.5 }]}
+                onPress={handleFitProduct}
+                disabled={!productInput.trim() || fittingProduct}
+                activeOpacity={0.85}
+              >
+                {fittingProduct
+                  ? <ActivityIndicator size="small" color="#0F0500" />
+                  : <Text style={apm.fitBtnText}>Fit to My Routine ✨</Text>
+                }
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </AfricanBG>
   );
 }
@@ -1251,4 +1537,28 @@ const s = StyleSheet.create({
   doneIcon:  { color: C.success, fontSize: 28, marginBottom: 10 },
   doneTitle: { color: C.success, fontSize: 18, fontWeight: "800", marginBottom: 6 },
   doneSub:   { color: C.creamDim, fontSize: 13, textAlign: "center", lineHeight: 20 },
+
+  addProductBtn:     { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "rgba(200,134,10,0.07)", borderWidth: 1.5, borderColor: "rgba(200,134,10,0.28)", borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, marginTop: 8, marginBottom: 20 },
+  addProductBtnIcon: { color: C.gold, fontSize: 22, fontWeight: "300", width: 28, textAlign: "center" },
+  addProductBtnText: { color: C.cream, fontSize: 13, fontWeight: "700" },
+  addProductBtnSub:  { color: C.creamDim, fontSize: 11, marginTop: 2 },
+});
+
+// ── Add-my-product modal styles ───────────────────────────────
+const apm = StyleSheet.create({
+  overlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' },
+  sheet:      { backgroundColor: '#1A0A02', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, borderWidth: 1, borderColor: 'rgba(200,134,10,0.25)' },
+  handle:     { width: 44, height: 4, borderRadius: 2, backgroundColor: 'rgba(200,134,10,0.35)', alignSelf: 'center', marginBottom: 20 },
+  title:      { color: '#F5DEB3', fontSize: 20, fontWeight: '800', marginBottom: 8 },
+  subtitle:   { color: 'rgba(245,222,179,0.55)', fontSize: 13, lineHeight: 20, marginBottom: 20 },
+  input:      { backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1.5, borderColor: 'rgba(200,134,10,0.35)', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, color: '#F5DEB3', fontSize: 14, marginBottom: 16 },
+  successBox: { backgroundColor: 'rgba(93,190,138,0.10)', borderWidth: 1, borderColor: 'rgba(93,190,138,0.35)', borderRadius: 10, padding: 12, marginBottom: 14 },
+  successText:{ color: '#5DBE8A', fontSize: 13, fontWeight: '700' },
+  errorBox:   { backgroundColor: 'rgba(224,92,58,0.10)', borderWidth: 1, borderColor: 'rgba(224,92,58,0.35)', borderRadius: 10, padding: 12, marginBottom: 14 },
+  errorText:  { color: '#E05C3A', fontSize: 13, fontWeight: '700' },
+  btnRow:     { flexDirection: 'row', gap: 12 },
+  cancelBtn:  { flex: 1, borderWidth: 1.5, borderColor: 'rgba(245,222,179,0.18)', borderRadius: 12, paddingVertical: 15, alignItems: 'center' },
+  cancelText: { color: 'rgba(245,222,179,0.55)', fontSize: 14, fontWeight: '700' },
+  fitBtn:     { flex: 2, backgroundColor: '#C8860A', borderRadius: 12, paddingVertical: 15, alignItems: 'center' },
+  fitBtnText: { color: '#0F0500', fontSize: 14, fontWeight: '900', letterSpacing: 0.5 },
 });

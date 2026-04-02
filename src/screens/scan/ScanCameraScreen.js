@@ -10,6 +10,7 @@ import {
   StatusBar, Dimensions, Platform, Linking,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as ImagePicker from 'expo-image-picker';
 import { useNavigation } from '@react-navigation/native';
 
 const { width: W, height: H } = Dimensions.get('window');
@@ -254,6 +255,40 @@ export default function ScanCameraScreen() {
     }
   };
 
+  // ── Gallery / image picker ────────────────────────────────
+  const pickFromGallery = useCallback(async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        setError('Gallery access is required to choose a photo.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.82,
+        base64: true,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+      const asset = result.assets[0];
+      if (!asset.base64) {
+        setError('Could not read image data. Please try another photo.');
+        return;
+      }
+      // Strip data URI prefix if present
+      const clean = asset.base64.replace(/^data:image\/[a-z]+;base64,/i, '');
+      navigation.navigate('ScanProcessing', {
+        imageBase64: clean,
+        mimeType: 'image/jpeg',
+        imageUri: asset.uri,
+      });
+    } catch (e) {
+      console.error('[ScanCamera] gallery pick failed:', e);
+      setError('Could not open gallery. Please try again.');
+    }
+  }, [navigation]);
+
   const openSettings = () =>
     Platform.OS === 'ios' ? Linking.openURL('app-settings:') : Linking.openSettings();
 
@@ -347,8 +382,19 @@ export default function ScanCameraScreen() {
           </TouchableOpacity>
         )}
 
+        {phase === 'guide' && (
+          <TouchableOpacity
+            style={s.galleryBtn}
+            onPress={pickFromGallery}
+            activeOpacity={0.8}
+          >
+            <Text style={s.galleryIcon}>🖼</Text>
+            <Text style={s.galleryLabel}>Choose from Gallery</Text>
+          </TouchableOpacity>
+        )}
+
         <Text style={s.disclaimer}>
-          Image is processed immediately by AI and never stored on our servers.
+          Image is processed locally by AI and not stored on our servers.
         </Text>
       </Animated.View>
     </View>
@@ -373,11 +419,14 @@ const s = StyleSheet.create({
   checkTitle: { color: C.creamDim, fontSize: 11, fontWeight: '700', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 14, textAlign: 'center' },
   errBanner: { backgroundColor: 'rgba(224,92,58,0.14)', borderWidth: 1, borderColor: 'rgba(224,92,58,0.40)', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10, marginBottom: 14, width: '100%' },
   errText: { color: C.error, fontSize: 13, fontWeight: '600', textAlign: 'center' },
-  cta: { width: W - 48, marginBottom: 14 },
+  cta: { width: W - 48, marginBottom: 10 },
   ctaOff: { opacity: 0.42 },
   ctaInner: { backgroundColor: C.gold, borderRadius: 14, paddingVertical: 17, alignItems: 'center', overflow: 'hidden', shadowColor: C.gold, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.55, shadowRadius: 18, elevation: 12 },
   ctaShimmer: { position: 'absolute', top: 0, left: 0, right: 0, height: '52%', backgroundColor: 'rgba(255,255,255,0.11)', borderRadius: 14 },
   ctaLabel: { color: '#0F0500', fontSize: 16, fontWeight: '900', letterSpacing: 1.5, textTransform: 'uppercase' },
   ctaLabelOff: { color: 'rgba(15,5,0,0.48)' },
+  galleryBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 18, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(245,222,179,0.20)', backgroundColor: 'rgba(0,0,0,0.30)', marginBottom: 12 },
+  galleryIcon: { fontSize: 14 },
+  galleryLabel: { color: 'rgba(245,222,179,0.55)', fontSize: 13, fontWeight: '600' },
   disclaimer: { color: 'rgba(245,222,179,0.26)', fontSize: 10, textAlign: 'center', lineHeight: 15 },
 });

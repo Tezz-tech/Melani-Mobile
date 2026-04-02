@@ -91,32 +91,53 @@ const DEFAULT_RESULT = {
   disclaimer: 'This report is a cosmetic, observational skin analysis. It is not a medical diagnosis and does not replace professional dermatological advice. Results are based on image analysis and may not capture all conditions.',
 };
 
-// ── Deep merge helper ─────────────────────────────────────────
+// ── Deep merge helper ─────────────────────────────────────────────
 function mergeResultWithDefault(incoming) {
   if (!incoming) return DEFAULT_RESULT;
 
   return {
     ...DEFAULT_RESULT,
     ...incoming,
+    // Normalise score field (backend sends overallScore)
+    score: incoming.overallScore ?? incoming.score ?? DEFAULT_RESULT.score,
     // Ensure arrays exist
-    conditions: incoming.conditions || DEFAULT_RESULT.conditions,
-    productRecs: incoming.productRecs || DEFAULT_RESULT.productRecs,
-    weeklyPlan: incoming.weeklyPlan || DEFAULT_RESULT.weeklyPlan,
-    progressMilestones: incoming.progressMilestones || DEFAULT_RESULT.progressMilestones,
+    conditions:          incoming.conditions          || DEFAULT_RESULT.conditions,
+    // Products come from scan.products (AI-matched) — fall back to legacy productRecs
+    productRecs:         incoming.products            ||
+                         incoming.productRecs         ||
+                         DEFAULT_RESULT.productRecs,
+    weeklyPlan:          incoming.weeklyPlan          || DEFAULT_RESULT.weeklyPlan,
+    progressMilestones:  incoming.progressMilestones  ||
+                         incoming.progressMilestones  ||
+                         DEFAULT_RESULT.progressMilestones,
+    // Normalise scanId
+    scanId: incoming.scanId || DEFAULT_RESULT.scanId,
+    // date
+    date: incoming.createdAt || incoming.date || DEFAULT_RESULT.date,
     // Deep merge melaninInsights
     melaninInsights: {
       ...DEFAULT_RESULT.melaninInsights,
       ...(incoming.melaninInsights || {}),
-      goodIngredients: incoming.melaninInsights?.goodIngredients || DEFAULT_RESULT.melaninInsights.goodIngredients,
-      avoidIngredients: incoming.melaninInsights?.avoidIngredients || DEFAULT_RESULT.melaninInsights.avoidIngredients,
+      // spfGuidance is the correct backend field name (spfNote is legacy)
+      spfNote:         incoming.melaninInsights?.spfGuidance ||
+                       incoming.melaninInsights?.spfNote     ||
+                       DEFAULT_RESULT.melaninInsights.spfNote,
+      fitzpatrickEst:  incoming.fitzpatrickEst || incoming.melaninInsights?.fitzpatrickEst || DEFAULT_RESULT.melaninInsights.fitzpatrickEst,
+      goodIngredients: incoming.goodIngredients  || incoming.melaninInsights?.goodIngredients  || DEFAULT_RESULT.melaninInsights.goodIngredients,
+      avoidIngredients:incoming.avoidIngredients || incoming.melaninInsights?.avoidIngredients || DEFAULT_RESULT.melaninInsights.avoidIngredients,
     },
-    // Deep merge routinePlan
+    // Deep merge routinePlan — backend sends "routine" array, not routinePlan
     routinePlan: {
       ...DEFAULT_RESULT.routinePlan,
-      ...(incoming.routinePlan || {}),
-      morning: incoming.routinePlan?.morning || DEFAULT_RESULT.routinePlan.morning,
-      night: incoming.routinePlan?.night || DEFAULT_RESULT.routinePlan.night,
+      morning: incoming.routinePlan?.morning ||
+               (incoming.routine || []).filter(r => r.timeOfDay === 'morning' || r.timeOfDay === 'both') ||
+               DEFAULT_RESULT.routinePlan.morning,
+      night:   incoming.routinePlan?.night ||
+               (incoming.routine || []).filter(r => r.timeOfDay === 'night' || r.timeOfDay === 'both') ||
+               DEFAULT_RESULT.routinePlan.night,
     },
+    // Pass through real scoreBreakdown for the score meter
+    scoreBreakdown: incoming.scoreBreakdown || null,
   };
 }
 
@@ -292,8 +313,8 @@ const cv = StyleSheet.create({
   chipText:   { color:C.creamDim,fontSize:10,fontWeight:'600' },
 });
 
-// ── Score breakdown meter ─────────────────────────────────────
-function ScoreMeter({ score }) {
+// ── Score breakdown meter ─────────────────────────────────────────────
+function ScoreMeter({ score, scoreBreakdown }) {
   const fillAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(fillAnim,{toValue:score/100,duration:900,delay:200,useNativeDriver:false}).start();
@@ -302,13 +323,19 @@ function ScoreMeter({ score }) {
   const color = score>=75?C.success:score>=55?C.warn:C.error;
   const label = score>=75?'Excellent':score>=65?'Good':score>=50?'Fair':'Needs Attention';
 
-  const SEGMENTS = [
-    { label:'Hydration', score:68 },
-    { label:'Clarity',   score:72 },
-    { label:'Evenness',  score:58 },
-    { label:'Texture',   score:80 },
-    { label:'Glow',      score:74 },
-  ];
+  // Only show sub-breakdown when the backend provides real scoreBreakdown data.
+  // Never show random/derived numbers on a health app — it erodes trust.
+  const hasRealBreakdown = scoreBreakdown &&
+    Object.keys(scoreBreakdown).length > 0 &&
+    Object.values(scoreBreakdown).some(v => v != null);
+
+  const SEGMENTS = hasRealBreakdown ? [
+    { label: 'Hydration', score: Math.min(100, Math.max(0, scoreBreakdown.hydration ?? 0)) },
+    { label: 'Clarity',   score: Math.min(100, Math.max(0, scoreBreakdown.clarity   ?? 0)) },
+    { label: 'Evenness',  score: Math.min(100, Math.max(0, scoreBreakdown.evenness   ?? 0)) },
+    { label: 'Texture',   score: Math.min(100, Math.max(0, scoreBreakdown.texture    ?? 0)) },
+    { label: 'Glow',      score: Math.min(100, Math.max(0, scoreBreakdown.glow       ?? 0)) },
+  ] : [];
 
   return (
     <View style={sm.wrap}>
@@ -326,20 +353,29 @@ function ScoreMeter({ score }) {
           </View>
         </View>
       </View>
-      <View style={sm.subGrid}>
-        {SEGMENTS.map((seg,i) => {
-          const c = seg.score>=70?C.success:seg.score>=55?C.warn:C.error;
-          return (
-            <View key={i} style={sm.subItem}>
-              <View style={sm.subTrack}>
-                <SubFillBar value={seg.score/100} color={c} delay={300+i*80}/>
+      {hasRealBreakdown && (
+        <View style={sm.subGrid}>
+          {SEGMENTS.map((seg,i) => {
+            const c = seg.score>=70?C.success:seg.score>=55?C.warn:C.error;
+            return (
+              <View key={i} style={sm.subItem}>
+                <View style={sm.subTrack}>
+                  <SubFillBar value={seg.score/100} color={c} delay={300+i*80}/>
+                </View>
+                <Text style={sm.subLabel}>{seg.label}</Text>
+                <Text style={[sm.subScore,{color:c}]}>{seg.score}</Text>
               </View>
-              <Text style={sm.subLabel}>{seg.label}</Text>
-              <Text style={[sm.subScore,{color:c}]}>{seg.score}</Text>
-            </View>
-          );
-        })}
-      </View>
+            );
+          })}
+        </View>
+      )}
+      {!hasRealBreakdown && (
+        <View style={sm.pendingNote}>
+          <Text style={sm.pendingText}>
+            ◎  Detailed sub-scores will appear after your next scan once available from the AI.
+          </Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -352,19 +388,21 @@ function SubFillBar({value,color,delay}) {
   return <Animated.View style={{height:'100%',borderRadius:3,backgroundColor:color,width}}/>;
 }
 const sm = StyleSheet.create({
-  wrap:       { backgroundColor:C.bgCard,borderWidth:1,borderColor:C.border,borderRadius:16,padding:18 },
-  mainRow:    { flexDirection:'row',alignItems:'center',gap:16,marginBottom:20 },
-  scoreNum:   { fontSize:44,fontWeight:'900',lineHeight:48,width:70 },
-  label:      { color:C.creamDim,fontSize:12,fontWeight:'600' },
-  labelScore: { fontSize:12,fontWeight:'800' },
-  track:      { height:8,backgroundColor:C.border,borderRadius:4,overflow:'hidden' },
-  fill:       { height:'100%',borderRadius:4 },
-  fillGlow:   { position:'absolute',right:0,top:-2,width:16,height:12,backgroundColor:'rgba(255,255,255,0.25)',borderRadius:6 },
-  subGrid:    { flexDirection:'row',gap:8 },
-  subItem:    { flex:1,alignItems:'center',gap:5 },
-  subTrack:   { width:'100%',height:6,backgroundColor:C.border,borderRadius:3,overflow:'hidden' },
-  subLabel:   { color:C.creamFaint,fontSize:9,fontWeight:'600',textAlign:'center' },
-  subScore:   { fontSize:11,fontWeight:'800' },
+  wrap:        { backgroundColor:C.bgCard,borderWidth:1,borderColor:C.border,borderRadius:16,padding:18 },
+  mainRow:     { flexDirection:'row',alignItems:'center',gap:16,marginBottom:20 },
+  scoreNum:    { fontSize:44,fontWeight:'900',lineHeight:48,width:70 },
+  label:       { color:C.creamDim,fontSize:12,fontWeight:'600' },
+  labelScore:  { fontSize:12,fontWeight:'800' },
+  track:       { height:8,backgroundColor:C.border,borderRadius:4,overflow:'hidden' },
+  fill:        { height:'100%',borderRadius:4 },
+  fillGlow:    { position:'absolute',right:0,top:-2,width:16,height:12,backgroundColor:'rgba(255,255,255,0.25)',borderRadius:6 },
+  subGrid:     { flexDirection:'row',gap:8 },
+  subItem:     { flex:1,alignItems:'center',gap:5 },
+  subTrack:    { width:'100%',height:6,backgroundColor:C.border,borderRadius:3,overflow:'hidden' },
+  subLabel:    { color:C.creamFaint,fontSize:9,fontWeight:'600',textAlign:'center' },
+  subScore:    { fontSize:11,fontWeight:'800' },
+  pendingNote: { marginTop:4,backgroundColor:'rgba(245,222,179,0.04)',borderRadius:8,padding:10,borderWidth:1,borderColor:C.border },
+  pendingText: { color:C.creamFaint,fontSize:11,lineHeight:17,textAlign:'center' },
 });
 
 // ── Conditions detail ─────────────────────────────────────────
@@ -497,36 +535,152 @@ const frp = StyleSheet.create({
   connector:{ position:'absolute',left:14,top:32,width:2,height:16,borderRadius:1 },
 });
 
-// ── Product recommendations ───────────────────────────────────
+// ── Product recommendations ────────────────────────────────────────────
+const REPORT_STORE_ICONS = { Jumia: '🛒', Konga: '🛍', GlowRoad: '✦', default: '🔗' };
+
 function ProductRecCard({ item, index }) {
+  const [expanded, setExpanded] = useState(false);
+  const expandAnim = useRef(new Animated.Value(0)).current;
+
+  const toggle = () => {
+    setExpanded(e => {
+      Animated.timing(expandAnim, { toValue: e ? 0 : 1, duration: 240, useNativeDriver: false }).start();
+      return !e;
+    });
+  };
+
+  // Support both real backend fields and the old hardcoded fallback format
+  const priceDisplay = item.priceNGN != null
+    ? `₦${Number(item.priceNGN).toLocaleString()}`
+    : (item.price || '');
+  const descText = item.description || item.why || '';
+  const links    = Array.isArray(item.affiliateLinks) ? item.affiliateLinks : [];
+  const isNigerian = (item.brandOrigin || '').toLowerCase().includes('nigerian') ||
+                     (item.brandOrigin || '').toLowerCase().includes('african') ||
+                     (item.brandOrigin || '').toLowerCase().includes('ghana');
+
+  const [detailH, setDetailH] = useState(0);
+  const detailHAnim = expandAnim.interpolate({ inputRange: [0, 1], outputRange: [0, detailH || 200] });
+  const detailOp    = expandAnim.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 0, 1] });
+
+  const DetailContent = () => (
+    <View style={{ paddingTop: 12 }}>
+      {item.howToUse ? (
+        <View style={prc.howToBox}>
+          <Text style={prc.sectionLabel}>HOW TO USE</Text>
+          <Text style={prc.howToText}>{item.howToUse}</Text>
+        </View>
+      ) : null}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+        {item.frequency ? (
+          <View style={prc.metaChip}>
+            <Text style={prc.metaChipText}>🕐  {item.frequency}</Text>
+          </View>
+        ) : null}
+        {item.amountToUse ? (
+          <View style={prc.metaChip}>
+            <Text style={prc.metaChipText}>⚗  {item.amountToUse}</Text>
+          </View>
+        ) : null}
+      </View>
+      {links.length > 0 && (
+        <View style={{ marginTop: 10 }}>
+          <Text style={prc.sectionLabel}>WHERE TO BUY</Text>
+          {links.map((lnk, li) => (
+            <View key={li} style={prc.storeRow}>
+              <Text style={prc.storeIcon}>{REPORT_STORE_ICONS[lnk.store] || REPORT_STORE_ICONS.default}</Text>
+              <Text style={prc.storeName}>{lnk.store}</Text>
+              {lnk.priceNGN != null && (
+                <Text style={prc.storePrice}>₦{Number(lnk.priceNGN).toLocaleString()}</Text>
+              )}
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+
   return (
-    <FadeSlide delay={index*70} style={{ marginBottom:10 }}>
-      <View style={prc.card}>
+    <FadeSlide delay={index*70} style={{ marginBottom:12 }}>
+      <TouchableOpacity style={prc.card} onPress={toggle} activeOpacity={0.88}>
         <View style={prc.iconBox}>
-          <Text style={prc.iconText}>◈</Text>
+          <Text style={prc.iconText}>{item.category === 'spf' ? '☀' : item.category === 'serum' ? '✦' : item.category === 'eye-cream' ? '◎' : '◈'}</Text>
         </View>
         <View style={{flex:1}}>
           <View style={prc.topRow}>
-            <Text style={prc.brand}>{item.brand}</Text>
-            <Text style={prc.price}>{item.price}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+              <Text style={prc.brand}>{item.brand || ''}</Text>
+              {isNigerian && (
+                <View style={prc.originBadge}>
+                  <Text style={prc.originText}>🌍</Text>
+                </View>
+              )}
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              {priceDisplay ? <Text style={prc.price}>{priceDisplay}</Text> : null}
+              <Text style={prc.expandHint}>{expanded ? '▲' : '▼'}</Text>
+            </View>
           </View>
           <Text style={prc.name}>{item.name}</Text>
-          <Text style={prc.why}>{item.why}</Text>
+          {descText ? <Text style={prc.why} numberOfLines={expanded ? 0 : 2}>{descText}</Text> : null}
+          {item.keyIngredients?.length > 0 && (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+              {item.keyIngredients.map((ing, ki) => (
+                <View key={ki} style={prc.ingPill}><Text style={prc.ingText}>{ing}</Text></View>
+              ))}
+            </View>
+          )}
+          {item.productStep ? (
+            <View style={prc.stepTag}>
+              <Text style={prc.stepTagText}>{item.productStep} step • {item.routineSlot || 'daily'}</Text>
+            </View>
+          ) : null}
         </View>
-      </View>
+      </TouchableOpacity>
+
+      {/* Expandable sourcing + usage */}
+      <Animated.View style={[prc.expandWrap, { height: detailHAnim, overflow: 'hidden' }]}>
+        <View
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, opacity: 0, zIndex: -1 }}
+          onLayout={(e) => { const h = e.nativeEvent.layout.height; if (h > 0 && h !== detailH) setDetailH(h); }}
+        >
+          <DetailContent />
+        </View>
+        <Animated.View style={{ opacity: detailOp }}>
+          <DetailContent />
+        </Animated.View>
+      </Animated.View>
     </FadeSlide>
   );
 }
 const prc = StyleSheet.create({
-  card:    { flexDirection:'row',alignItems:'flex-start',gap:12,backgroundColor:C.bgCard,borderWidth:1,borderColor:C.border,borderRadius:14,padding:14 },
-  iconBox: { width:36,height:36,borderRadius:10,backgroundColor:C.goldPale,borderWidth:1,borderColor:C.border,alignItems:'center',justifyContent:'center' },
-  iconText:{ color:C.gold,fontSize:14 },
-  topRow:  { flexDirection:'row',justifyContent:'space-between',alignItems:'center',marginBottom:3 },
-  brand:   { color:C.gold,fontSize:11,fontWeight:'700',letterSpacing:0.5 },
-  price:   { color:C.creamDim,fontSize:12,fontWeight:'600' },
-  name:    { color:C.cream,fontSize:14,fontWeight:'700',marginBottom:4 },
-  why:     { color:C.creamDim,fontSize:12,lineHeight:17 },
+  card:        { flexDirection:'row', alignItems:'flex-start', gap:12, backgroundColor:C.bgCard, borderWidth:1, borderColor:C.border, borderRadius:14, padding:14 },
+  iconBox:     { width:38, height:38, borderRadius:10, backgroundColor:C.goldPale, borderWidth:1, borderColor:C.border, alignItems:'center', justifyContent:'center', flexShrink:0 },
+  iconText:    { color:C.gold, fontSize:15 },
+  topRow:      { flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:3 },
+  brand:       { color:C.gold, fontSize:11, fontWeight:'700', letterSpacing:0.5 },
+  originBadge: { backgroundColor:'rgba(93,190,138,0.14)', borderWidth:1, borderColor:'rgba(93,190,138,0.35)', borderRadius:5, paddingHorizontal:4, paddingVertical:1 },
+  originText:  { fontSize:10 },
+  price:       { color:C.creamDim, fontSize:12, fontWeight:'700' },
+  expandHint:  { color:C.creamFaint, fontSize:9, fontWeight:'700' },
+  name:        { color:C.cream, fontSize:14, fontWeight:'800', marginBottom:4 },
+  why:         { color:C.creamDim, fontSize:12, lineHeight:17 },
+  ingPill:     { backgroundColor:C.goldPale, borderWidth:1, borderColor:C.border, borderRadius:6, paddingHorizontal:6, paddingVertical:2 },
+  ingText:     { color:C.creamDim, fontSize:9, fontWeight:'600' },
+  stepTag:     { marginTop:6, alignSelf:'flex-start', backgroundColor:'rgba(200,134,10,0.10)', borderWidth:1, borderColor:'rgba(200,134,10,0.25)', borderRadius:6, paddingHorizontal:7, paddingVertical:2 },
+  stepTagText: { color:C.gold, fontSize:9, fontWeight:'700', letterSpacing:0.5 },
+  expandWrap:  { paddingHorizontal:14 },
+  sectionLabel:{ color:C.gold, fontSize:9, fontWeight:'700', letterSpacing:1, marginBottom:6 },
+  howToBox:    { backgroundColor:'rgba(245,222,179,0.04)', borderLeftWidth:2, borderLeftColor:C.gold, borderRadius:8, padding:10 },
+  howToText:   { color:C.creamDim, fontSize:12, lineHeight:18 },
+  metaChip:    { backgroundColor:'rgba(245,222,179,0.06)', borderWidth:1, borderColor:C.border, borderRadius:6, paddingHorizontal:8, paddingVertical:3 },
+  metaChipText:{ color:C.creamDim, fontSize:11, fontWeight:'600' },
+  storeRow:    { flexDirection:'row', alignItems:'center', gap:8, paddingVertical:6, borderBottomWidth:1, borderBottomColor:C.border },
+  storeIcon:   { fontSize:14, width:22 },
+  storeName:   { color:C.cream, fontSize:12, fontWeight:'700', flex:1 },
+  storePrice:  { color:C.gold, fontSize:12, fontWeight:'800' },
 });
+
 
 // ── Weekly schedule ───────────────────────────────────────────
 function WeeklySchedule({ plan }) {
@@ -663,7 +817,7 @@ export default function ScanReportScreen() {
 
         {/* SCORE BREAKDOWN */}
         <ReportSection title="Skin Health Score" icon="◎" delay={80}>
-          <ScoreMeter score={result.score} />
+          <ScoreMeter score={result.score} scoreBreakdown={result.scoreBreakdown} />
         </ReportSection>
 
         {/* CONDITIONS */}
@@ -763,7 +917,7 @@ export default function ScanReportScreen() {
 
         {/* Footer */}
         <FadeSlide delay={760} style={s.footer}>
-          <Text style={s.footerBrand}>MELANIN SCAN</Text>
+          <Text style={s.footerBrand}>MELANI SCAN</Text>
           <Text style={s.footerTagline}>Built for melanin-rich skin, by design.</Text>
           <Text style={s.footerMeta}>Report ID: {result.scanId}</Text>
         </FadeSlide>

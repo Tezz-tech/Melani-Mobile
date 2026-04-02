@@ -13,17 +13,17 @@ const BASE_URL = __DEV__
   : 'https://melani-backend.onrender.com/api';
 
 const DEFAULT_TIMEOUT = 15_000;
-const SCAN_TIMEOUT    = 70_000;  // Gemini vision can take 20–40s
+const SCAN_TIMEOUT = 70_000;  // Gemini vision can take 20–40s
 
 // ─────────────────────────────────────────────────────────────
 //  Token storage
 // ─────────────────────────────────────────────────────────────
 export const TokenStorage = {
-  async getAccess()     { return AsyncStorage.getItem('accessToken'); },
-  async getRefresh()    { return AsyncStorage.getItem('refreshToken'); },
+  async getAccess() { return AsyncStorage.getItem('accessToken'); },
+  async getRefresh() { return AsyncStorage.getItem('refreshToken'); },
   async setTokens(a, r) { await AsyncStorage.multiSet([['accessToken', a], ['refreshToken', r]]); },
-  async clearTokens()   { await AsyncStorage.multiRemove(['accessToken', 'refreshToken', 'user']); },
-  async setUser(u)      { await AsyncStorage.setItem('user', JSON.stringify(u)); },
+  async clearTokens() { await AsyncStorage.multiRemove(['accessToken', 'refreshToken', 'user']); },
+  async setUser(u) { await AsyncStorage.setItem('user', JSON.stringify(u)); },
   async getUser() {
     const raw = await AsyncStorage.getItem('user');
     return raw ? JSON.parse(raw) : null;
@@ -34,7 +34,7 @@ export const TokenStorage = {
 //  Core fetch wrapper
 // ─────────────────────────────────────────────────────────────
 async function request(method, path, body = null, auth = false, timeout = DEFAULT_TIMEOUT) {
-  const ctrl  = new AbortController();
+  const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeout);
 
   const headers = { 'Content-Type': 'application/json' };
@@ -47,7 +47,7 @@ async function request(method, path, body = null, auth = false, timeout = DEFAUL
   if (body) opts.body = JSON.stringify(body);
 
   try {
-    const res  = await fetch(`${BASE_URL}${path}`, opts);
+    const res = await fetch(`${BASE_URL}${path}`, opts);
     const data = await res.json();
     clearTimeout(timer);
 
@@ -79,7 +79,7 @@ async function tryRefresh() {
   try {
     const refreshToken = await TokenStorage.getRefresh();
     if (!refreshToken) return false;
-    const res  = await fetch(`${BASE_URL}/auth/refresh-token`, {
+    const res = await fetch(`${BASE_URL}/auth/refresh-token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refreshToken }),
@@ -238,6 +238,11 @@ export const RoutineAPI = {
     const data = await request('PUT', '/routine', updates, true);
     return data.data?.routine || data.data || data;
   },
+  // NEW: user types a product name → AI fits it into their routine
+  async fitProduct(productName) {
+    const data = await request('POST', '/routine/fit-product', { productName }, true, 20_000);
+    return data; // { routine, fitResult, message }
+  },
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -245,7 +250,7 @@ export const RoutineAPI = {
 // ─────────────────────────────────────────────────────────────
 export const ProductAPI = {
   async getAll(filters = {}) {
-    const qs   = new URLSearchParams(filters).toString();
+    const qs = new URLSearchParams(filters).toString();
     const data = await request('GET', `/products${qs ? `?${qs}` : ''}`, null, true);
     return data.data?.products || data.data || data;
   },

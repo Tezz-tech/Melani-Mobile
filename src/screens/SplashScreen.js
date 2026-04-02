@@ -193,7 +193,7 @@ export default function SplashScreen() {
           styles.appName,
           { opacity: textOpacity, transform: [{ translateY: textSlide }] },
         ]}>
-          MELANIN SCAN
+          MELANI SCAN
         </Animated.Text>
 
         {/* Tagline with gold accent bar */}

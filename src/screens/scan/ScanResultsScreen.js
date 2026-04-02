@@ -273,31 +273,43 @@ const sr2 = StyleSheet.create({
   label: { fontSize: 12, fontWeight: "800", letterSpacing: 1 },
 });
 
+// ── Fitzpatrick → plain tone label ───────────────────────────
+function toneLabel(fitzpatrick) {
+  const map = {
+    III: "Light-medium brown tone",
+    IV:  "Medium-deep brown tone",
+    V:   "Deep brown tone",
+    VI:  "Very deep brown / ebony tone",
+  };
+  return map[fitzpatrick] || "Rich melanin tone";
+}
+
 // ── Skin type card ────────────────────────────────────────────
-function SkinTypeCard({ skinType, confidence }) {
+function SkinTypeCard({ skinType, confidence, fitzpatrick }) {
   const TYPES = {
     Oily: {
       color: "#E8A020",
       icon: "💧",
-      desc: "Your skin produces excess sebum, especially in the T-zone. Focus on balancing, not stripping.",
+      desc: "Your skin produces excess oil, especially around the nose and forehead. Your routine should balance oil without drying you out.",
     },
     Dry: {
       color: "#5BA4E8",
       icon: "🌵",
-      desc: "Your skin lacks moisture and may feel tight or flaky. Focus on rich hydration and barrier repair.",
+      desc: "Your skin needs more moisture. It may feel tight or look dull. A rich hydrating routine will help your skin feel soft and protected.",
     },
     Combination: {
       color: "#C8860A",
       icon: "◎",
-      desc: "Oily T-zone with dry or normal cheeks. Your routine needs to address both zones.",
+      desc: "Your T-zone (nose, forehead) is oilier while your cheeks may feel drier. Your routine needs to gently balance both areas.",
     },
     Normal: {
       color: "#5DBE8A",
       icon: "✦",
-      desc: "Balanced skin — not too oily or dry. Focus on maintenance and prevention.",
+      desc: "Your skin is well-balanced — not too oily or dry. Focus on maintaining what's working and protecting against sun damage.",
     },
   };
-  const cfg = TYPES[skinType] || TYPES.Normal;
+  const key = skinType ? skinType.charAt(0).toUpperCase() + skinType.slice(1).toLowerCase() : 'Normal';
+  const cfg = TYPES[key] || TYPES.Normal;
   return (
     <View style={[stc.card, { borderColor: `${cfg.color}40` }]}>
       <View
@@ -309,32 +321,23 @@ function SkinTypeCard({ skinType, confidence }) {
         <Text style={{ fontSize: 22 }}>{cfg.icon}</Text>
       </View>
       <View style={{ flex: 1 }}>
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 10,
-            marginBottom: 6,
-          }}
-        >
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 6 }}>
           <Text style={[stc.typeName, { color: cfg.color }]}>
-            {skinType} Skin
+            {key} Skin
           </Text>
-          <View
-            style={[
-              stc.confidenceBadge,
-              {
-                backgroundColor: `${cfg.color}18`,
-                borderColor: `${cfg.color}40`,
-              },
-            ]}
-          >
+          <View style={[stc.confidenceBadge, { backgroundColor: `${cfg.color}18`, borderColor: `${cfg.color}40` }]}>
             <Text style={[stc.confidenceText, { color: cfg.color }]}>
-              {confidence} confidence
+              {confidence}% match
             </Text>
           </View>
         </View>
         <Text style={stc.desc}>{cfg.desc}</Text>
+        {fitzpatrick && (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10, backgroundColor: "rgba(200,134,10,0.08)", borderRadius: 8, padding: 8, borderWidth: 1, borderColor: "rgba(200,134,10,0.20)" }}>
+            <Text style={{ fontSize: 13 }}>🎨</Text>
+            <Text style={{ color: C.creamDim, fontSize: 12 }}>{toneLabel(fitzpatrick)}</Text>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -368,6 +371,15 @@ const stc = StyleSheet.create({
   desc: { color: C.creamDim, fontSize: 13, lineHeight: 19 },
 });
 
+// ── Severity label → plain English ───────────────────────────
+function severityLabel(severity) {
+  if (!severity) return 'Minor';
+  const s = severity.toLowerCase();
+  if (s === 'severe')   return 'Needs attention';
+  if (s === 'moderate') return 'Worth addressing';
+  return 'Minor';
+}
+
 // ── Condition card ────────────────────────────────────────────
 function ConditionCard({ item, index }) {
   const [expanded, setExpanded] = useState(false);
@@ -384,53 +396,36 @@ function ConditionCard({ item, index }) {
     });
   };
 
-  const SEVERITY = {
-    Mild: { color: C.success, bg: C.successPale },
-    Moderate: { color: C.warn, bg: C.warnPale },
-    Severe: { color: C.error, bg: C.errorPale },
-  };
-  const sev = SEVERITY[item.severity] || SEVERITY.Mild;
-  const detailHeight = expandH.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 70],
-  });
+  const sev = item.severity?.toLowerCase();
+  const sevColor = sev === 'severe' ? C.error : sev === 'moderate' ? C.warn : C.success;
+  const sevBg    = sev === 'severe' ? C.errorPale : sev === 'moderate' ? C.warnPale : C.successPale;
+  // Affected areas as plain text
+  const areas = Array.isArray(item.affectedAreas) && item.affectedAreas.length > 0
+    ? item.affectedAreas.join(', ')
+    : null;
+
+  const detailHeight = expandH.interpolate({ inputRange: [0, 1], outputRange: [0, 90] });
 
   return (
     <FadeSlide delay={index * 80} style={{ marginBottom: 10 }}>
       <TouchableOpacity onPress={toggle} activeOpacity={0.85}>
         <View style={cc.card}>
           <View style={cc.row}>
-            <View
-              style={[
-                cc.iconBox,
-                {
-                  backgroundColor: `${sev.color}18`,
-                  borderColor: `${sev.color}35`,
-                },
-              ]}
-            >
-              <Text style={{ color: sev.color, fontSize: 14 }}>
-                {item.icon}
-              </Text>
+            <View style={[cc.iconBox, { backgroundColor: `${sevColor}18`, borderColor: `${sevColor}35` }]}>
+              <Text style={{ color: sevColor, fontSize: 16 }}>◉</Text>
             </View>
             <View style={{ flex: 1 }}>
               <Text style={cc.name}>{item.name}</Text>
-              <View
-                style={[
-                  cc.sevBadge,
-                  { backgroundColor: sev.bg, borderColor: `${sev.color}40` },
-                ]}
-              >
-                <Text style={[cc.sevText, { color: sev.color }]}>
-                  {item.severity}
-                </Text>
+              {areas && <Text style={cc.areaText}>On your {areas}</Text>}
+              <View style={[cc.sevBadge, { backgroundColor: sevBg, borderColor: `${sevColor}40` }]}>
+                <Text style={[cc.sevText, { color: sevColor }]}>{severityLabel(item.severity)}</Text>
               </View>
             </View>
             <Text style={cc.expand}>{expanded ? "−" : "+"}</Text>
           </View>
           <Animated.View style={{ height: detailHeight, overflow: "hidden" }}>
             <View style={cc.detail}>
-              <Text style={cc.detailText}>🧬 {item.melaninNote}</Text>
+              <Text style={cc.detailText}>💡 {item.melaninNote}</Text>
             </View>
           </Animated.View>
         </View>
@@ -446,88 +441,73 @@ const cc = StyleSheet.create({
     borderRadius: 14,
     padding: 14,
   },
-  row: { flexDirection: "row", alignItems: "center", gap: 12 },
-  iconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 9,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  name: { color: C.cream, fontSize: 14, fontWeight: "700", marginBottom: 5 },
-  sevBadge: {
-    alignSelf: "flex-start",
-    borderWidth: 1,
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  sevText: { fontSize: 10, fontWeight: "800", letterSpacing: 0.5 },
-  expand: {
-    color: C.gold,
-    fontSize: 20,
-    fontWeight: "300",
-    width: 24,
-    textAlign: "center",
-  },
-  detail: {
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: C.border,
-    marginTop: 12,
-  },
+  row:      { flexDirection: "row", alignItems: "center", gap: 12 },
+  iconBox:  { width: 36, height: 36, borderRadius: 9, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  name:     { color: C.cream, fontSize: 14, fontWeight: "700", marginBottom: 3 },
+  areaText: { color: C.creamDim, fontSize: 11, marginBottom: 4 },
+  sevBadge: { alignSelf: "flex-start", borderWidth: 1, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2 },
+  sevText:  { fontSize: 10, fontWeight: "800", letterSpacing: 0.5 },
+  expand:   { color: C.gold, fontSize: 20, fontWeight: "300", width: 24, textAlign: "center" },
+  detail:   { paddingTop: 12, borderTopWidth: 1, borderTopColor: C.border, marginTop: 12 },
   detailText: { color: C.creamDim, fontSize: 12, lineHeight: 18 },
 });
 
-// ── Melanin insights card ─────────────────────────────────────
-function MelaninInsightsCard({ insights }) {
-  const PIH_COLORS = { Low: C.success, Moderate: C.warn, High: C.error };
-  const color = PIH_COLORS[insights.pihRisk] || C.warn;
+// ── Dark spot risk → plain label ─────────────────────────────
+function darkSpotLabel(pihRisk) {
+  const r = (pihRisk || '').toLowerCase();
+  if (r === 'high')     return { text: 'High risk — dark spots can form easily', short: 'High' };
+  if (r === 'moderate') return { text: 'Moderate risk — take care to avoid irritation', short: 'Moderate' };
+  return { text: 'Low risk — your skin handles marks well', short: 'Low' };
+}
+
+// ── Skin Tips card (replaces jargon-heavy Melanin Insights) ──
+function SkinTipsCard({ insights }) {
+  const pihColors = { low: C.success, moderate: C.warn, high: C.error };
+  const riskKey   = (insights.pihRisk || 'moderate').toLowerCase();
+  const color     = pihColors[riskKey] || C.warn;
+  const darkSpot  = darkSpotLabel(insights.pihRisk);
+  // ── FIX: use spfGuidance (correct field name) not spfNote ──
+  const spfText   = insights.spfGuidance || insights.spfNote || 'Apply SPF 50 every morning — sun protection is essential for dark skin.';
+  const flags     = Array.isArray(insights.sensitivityFlags) ? insights.sensitivityFlags : [];
+
   return (
     <FadeSlide delay={200} style={mi.wrap}>
       <View style={mi.card}>
+        {/* Dark spot risk */}
         <View style={mi.row}>
           <View style={mi.rowLeft}>
             <Text style={mi.rowIcon}>◑</Text>
             <View>
-              <Text style={mi.rowLabel}>PIH Risk Level</Text>
-              <Text style={[mi.rowValue, { color }]}>{insights.pihRisk}</Text>
+              <Text style={mi.rowLabel}>Dark Spot Risk</Text>
+              <Text style={[mi.rowValue, { color }]}>{darkSpot.short}</Text>
             </View>
           </View>
           <View style={[mi.riskBar, { borderColor: `${color}40` }]}>
-            <View
-              style={[
-                mi.riskFill,
-                {
-                  width:
-                    insights.pihRisk === "Low"
-                      ? "30%"
-                      : insights.pihRisk === "Moderate"
-                        ? "60%"
-                        : "90%",
-                  backgroundColor: color,
-                },
-              ]}
-            />
+            <View style={[mi.riskFill, { width: riskKey === 'low' ? '30%' : riskKey === 'moderate' ? '60%' : '90%', backgroundColor: color }]} />
           </View>
         </View>
+        <Text style={mi.riskExplain}>{darkSpot.text}</Text>
+
         <View style={mi.divider} />
+
+        {/* SPF */}
         <View style={mi.infoRow}>
           <Text style={mi.infoIcon}>☀</Text>
           <View style={{ flex: 1 }}>
-            <Text style={mi.infoLabel}>SPF Guidance</Text>
-            <Text style={mi.infoText}>{insights.spfNote}</Text>
+            <Text style={mi.infoLabel}>Sun Protection</Text>
+            <Text style={mi.infoText}>{spfText}</Text>
           </View>
         </View>
-        {insights.sensitivity && (
+
+        {/* Ingredients to watch */}
+        {flags.length > 0 && (
           <>
             <View style={mi.divider} />
             <View style={mi.infoRow}>
               <Text style={mi.infoIcon}>⚠</Text>
               <View style={{ flex: 1 }}>
-                <Text style={mi.infoLabel}>Sensitivity Flags</Text>
-                <Text style={mi.infoText}>{insights.sensitivity}</Text>
+                <Text style={mi.infoLabel}>Ingredients to avoid</Text>
+                <Text style={mi.infoText}>{flags.join(',  ')}</Text>
               </View>
             </View>
           </>
@@ -549,16 +529,11 @@ const mi = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 14,
+    marginBottom: 6,
   },
   rowLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
   rowIcon: { color: C.gold, fontSize: 20 },
-  rowLabel: {
-    color: C.creamDim,
-    fontSize: 11,
-    fontWeight: "600",
-    marginBottom: 3,
-  },
+  rowLabel: { color: C.creamDim, fontSize: 11, fontWeight: "600", marginBottom: 3 },
   rowValue: { fontSize: 16, fontWeight: "900" },
   riskBar: {
     width: 80,
@@ -568,19 +543,13 @@ const mi = StyleSheet.create({
     overflow: "hidden",
     backgroundColor: "rgba(255,255,255,0.05)",
   },
-  riskFill: { height: "100%", borderRadius: 4 },
-  divider: { height: 1, backgroundColor: C.border, marginVertical: 14 },
-  infoRow: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
-  infoIcon: { fontSize: 16, marginTop: 1 },
-  infoLabel: {
-    color: C.creamDim,
-    fontSize: 11,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-    marginBottom: 4,
-  },
-  infoText: { color: C.cream, fontSize: 12, lineHeight: 18 },
+  riskFill:    { height: "100%", borderRadius: 4 },
+  riskExplain: { color: C.creamDim, fontSize: 12, lineHeight: 17, marginBottom: 4 },
+  divider:     { height: 1, backgroundColor: C.border, marginVertical: 14 },
+  infoRow:     { flexDirection: "row", alignItems: "flex-start", gap: 12 },
+  infoIcon:    { fontSize: 16, marginTop: 1 },
+  infoLabel:   { color: C.creamDim, fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 4 },
+  infoText:    { color: C.cream, fontSize: 12, lineHeight: 18 },
 });
 
 // ── Ingredient chips ──────────────────────────────────────────
@@ -1055,24 +1024,28 @@ export default function ScanResultsScreen() {
   }
 
   // ── Normalise API fields ──────────────────────────────────
-  const skinType = result.skinType || result.skin_type || "Unknown";
-  const confidence = result.confidence || "High";
+  const rawSkinType = result.skinType || result.skin_type || "Normal";
+  const skinType = rawSkinType.charAt(0).toUpperCase() + rawSkinType.slice(1).toLowerCase();
+  const confidence = typeof result.confidence === 'number' ? result.confidence : 85;
   const score = result.overallScore ?? result.score ?? 0;
-  const conditions = result.conditions || [];
+  const fitzpatrick = result.fitzpatrickEst || null;
+  const conditions = Array.isArray(result.conditions) ? result.conditions : [];
   const insights = result.melaninInsights || {
     pihRisk: "Moderate",
-    spfNote: "Use SPF 30–50 daily. UV damage worsens hyperpigmentation.",
-    sensitivity: "Avoid fragrance and harsh alcohols.",
+    spfGuidance: "Apply SPF 50 every morning — this is the single most important step for dark skin.",
+    sensitivityFlags: ["Fragrance", "Alcohol Denat."],
   };
-  const topIngredients =
-    insights.goodIngredients || result.topIngredients || [];
-  const avoidIngredients =
-    insights.avoidIngredients || result.avoidIngredients || [];
+  // Pull ingredients from top-level (where backend puts them) or insights
+  const topIngredients = result.goodIngredients || insights.goodIngredients || result.topIngredients || [];
+  const avoidIngredients = result.avoidIngredients || insights.avoidIngredients || [];
   const routinePreview = result.routinePreview ||
     result.routinePlan || { morning: [], night: [] };
   const disclaimer =
     result.disclaimer ||
     "This is a cosmetic, observational analysis only. Not a medical diagnosis.";
+  // ── Plain-language summary sentence ────────────────────────
+  const scoreTier = score >= 75 ? 'looking healthy' : score >= 55 ? 'doing well' : 'needing some care';
+  const summarySentence = `Your skin is ${skinType.toLowerCase()} type and ${scoreTier} (${score}/100).`;
   const scanDate = result.createdAt
     ? new Date(result.createdAt).toLocaleDateString("en-NG", {
         day: "numeric",
@@ -1123,8 +1096,8 @@ export default function ScanResultsScreen() {
               <View style={s.heroTagDot} />
               <Text style={s.heroTagText}>SCAN COMPLETE</Text>
             </View>
-            <Text style={s.heroTitle}>Melanin Skin{"\n"}Analysis</Text>
-            <Text style={s.heroSub}>Tap conditions to learn more</Text>
+            <Text style={s.heroTitle}>Your Skin{"\n"}Report</Text>
+            <Text style={s.heroSub}>{summarySentence}</Text>
           </View>
           <ScoreRing score={score} />
         </FadeSlide>
@@ -1135,15 +1108,15 @@ export default function ScanResultsScreen() {
         {/* Skin type */}
         <FadeSlide delay={200} style={s.section}>
           <SectionLabel text="Skin Type" sub="Identified from image analysis" />
-          <SkinTypeCard skinType={skinType} confidence={confidence} />
+          <SkinTypeCard skinType={skinType} confidence={confidence} fitzpatrick={fitzpatrick} />
         </FadeSlide>
 
         {/* Conditions */}
         {conditions.length > 0 && (
           <FadeSlide delay={280} style={s.section}>
             <SectionLabel
-              text="Observed Conditions"
-              sub="Tap each to see melanin-specific notes"
+              text="What We Noticed"
+              sub="Tap each one to learn what it means for you"
             />
             {conditions.map((cond, i) => (
               <ConditionCard key={i} item={cond} index={i} />
@@ -1151,19 +1124,19 @@ export default function ScanResultsScreen() {
           </FadeSlide>
         )}
 
-        {/* Melanin insights */}
+        {/* Skin Tips */}
         <FadeSlide delay={360} style={s.section}>
           <SectionLabel
-            text="Melanin Insights"
-            sub="Specific to your skin tone"
+            text="Skin Tips For You"
+            sub="Based on what we saw in your photo"
           />
-          <MelaninInsightsCard insights={insights} />
+          <SkinTipsCard insights={insights} />
         </FadeSlide>
 
         {/* Recommended ingredients */}
         {topIngredients.length > 0 && (
           <FadeSlide delay={440} style={s.section}>
-            <SectionLabel text="Recommended Ingredients" />
+            <SectionLabel text="Good For Your Skin" sub="Ingredients to look for on product labels" />
             <IngredientChips items={topIngredients} type="use" />
           </FadeSlide>
         )}
@@ -1172,8 +1145,8 @@ export default function ScanResultsScreen() {
         {avoidIngredients.length > 0 && (
           <FadeSlide delay={500} style={s.section}>
             <SectionLabel
-              text="Avoid These"
-              sub="May trigger PIH or irritation"
+              text="Ingredients to Avoid"
+              sub="These can cause dark spots or irritation on your skin type"
             />
             <IngredientChips items={avoidIngredients} type="avoid" />
           </FadeSlide>

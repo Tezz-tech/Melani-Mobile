@@ -193,8 +193,8 @@ function FadeSlide({ delay = 0, from = 20, children, style }) {
 // ─────────────────────────────────────────────────────────────
 //  Pulsing scan orb button
 // ─────────────────────────────────────────────────────────────
-function ScanOrb({ onPress }) {
-  const glow = useRef(new Animated.Value(0.4)).current;
+function ScanOrb({ onPress, disabled }) {
+  const glow = useRef(new Animated.Value(disabled ? 0.15 : 0.4)).current;
   const ring1 = useRef(new Animated.Value(1)).current;
   const ring2 = useRef(new Animated.Value(1)).current;
   const scale = useRef(new Animated.Value(1)).current;
@@ -247,7 +247,7 @@ function ScanOrb({ onPress }) {
   }, []);
 
   return (
-    <View style={orb.wrap}>
+    <View style={[orb.wrap, disabled && { opacity: 0.5 }]}>
       <Animated.View
         style={[orb.ringOuter, { transform: [{ scale: ring2 }] }]}
       />
@@ -831,6 +831,53 @@ const qa = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────
+//  Score sparkline — mini bar chart on Home using stats.scoreHistory
+// ─────────────────────────────────────────────────────────────
+function ScoreSparkline({ stats }) {
+  if (!stats?.scoreHistory || stats.scoreHistory.length < 2) return null;
+  const data = stats.scoreHistory.slice(-8);
+  const maxS  = Math.max(...data.map(d => d.score), 1);
+
+  return (
+    <FadeSlide delay={870} style={{ marginBottom: 26 }}>
+      <View style={sp.card}>
+        <View style={sp.header}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+            <View style={{ width: 4, height: 14, borderRadius: 2, backgroundColor: C.gold }} />
+            <Text style={sp.title}>Score Trend</Text>
+          </View>
+          <Text style={sp.sub}>Last {data.length} scans</Text>
+        </View>
+        <View style={sp.chart}>
+          {data.map((d, i) => {
+            const h   = Math.max(6, (d.score / maxS) * 52);
+            const col = d.score >= 70 ? C.success : d.score >= 50 ? C.goldLight : C.error;
+            const isLast = i === data.length - 1;
+            return (
+              <View key={i} style={sp.barWrap}>
+                {isLast && (
+                  <Text style={{ color: col, fontSize: 9, fontWeight: '800', marginBottom: 2 }}>{d.score}</Text>
+                )}
+                <View style={[sp.bar, { height: h, backgroundColor: isLast ? col : col + '66' }]} />
+              </View>
+            );
+          })}
+        </View>
+      </View>
+    </FadeSlide>
+  );
+}
+const sp = StyleSheet.create({
+  card:    { backgroundColor: C.bgCard, borderWidth: 1, borderColor: C.border, borderRadius: 14, padding: 16 },
+  header:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  title:   { color: C.cream, fontSize: 14, fontWeight: '700' },
+  sub:     { color: C.creamDim, fontSize: 11 },
+  chart:   { flexDirection: 'row', alignItems: 'flex-end', gap: 5, height: 64 },
+  barWrap: { flex: 1, alignItems: 'center', justifyContent: 'flex-end' },
+  bar:     { width: '100%', borderRadius: 3 },
+});
+
+// ─────────────────────────────────────────────────────────────
 //  Skin score progress card  ← improvement from API
 // ─────────────────────────────────────────────────────────────
 function ScoreProgressCard({ stats, loading }) {
@@ -1019,6 +1066,21 @@ export default function HomeScreen() {
   const skinLabel = skinType ? capitalize(skinType) : "—";
   const totalScans = stats?.totalScans ?? 0;
 
+  // ── Scan quota check (free plan) ─────────────────────────
+  const plan            = user?.subscription?.plan || 'free';
+  const FREE_LIMIT      = 3; // match backend limit
+  const scansUsed       = user?.scanUsage?.monthlyCount ?? 0;
+  const isOverQuota     = plan === 'free' && scansUsed >= FREE_LIMIT;
+  const scansRemaining  = Math.max(0, FREE_LIMIT - scansUsed);
+
+  const handleScanPress = useCallback(() => {
+    if (isOverQuota) {
+      navigation.navigate('Subscription');
+    } else {
+      navigation.navigate('ScanCamera');
+    }
+  }, [isOverQuota, navigation]);
+
   const greeting = (() => {
     const h = new Date().getHours();
     if (h < 12) return "Good morning";
@@ -1121,9 +1183,29 @@ export default function HomeScreen() {
         {/* ── Streak banner — real streak ── */}
         <StreakBanner streak={streakDays} />
 
-        {/* ── Scan orb ── */}
+        {/* ── Scan orb — intercept free users over quota ── */}
         <FadeSlide delay={250}>
-          <ScanOrb onPress={() => navigation.navigate("ScanCamera")} />
+          <ScanOrb onPress={handleScanPress} disabled={isOverQuota} />
+          {plan === 'free' && (
+            <View style={s.quotaRow}>
+              {isOverQuota ? (
+                <TouchableOpacity
+                  onPress={() => navigation.navigate('Subscription')}
+                  activeOpacity={0.8}
+                >
+                  <View style={s.quotaBanner}>
+                    <Text style={s.quotaBannerText}>
+                      ⚠  Monthly scans used ({FREE_LIMIT}/{FREE_LIMIT}) — Upgrade for unlimited
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ) : (
+                <Text style={s.quotaText}>
+                  {scansRemaining} free scan{scansRemaining !== 1 ? 's' : ''} remaining this month
+                </Text>
+              )}
+            </View>
+          )}
         </FadeSlide>
 
         {/* ── Stats row — live from API ── */}
@@ -1200,6 +1282,9 @@ export default function HomeScreen() {
 
         {/* ── Score progress — shown only when user has ≥2 scans ── */}
         <ScoreProgressCard stats={stats} loading={loading} />
+
+        {/* ── Score sparkline — mini trend chart ── */}
+        <ScoreSparkline stats={stats} />
 
         {/* ── Melanin education tips (always shown) ── */}
         <FadeSlide delay={900} style={s.sectionWrap}>
@@ -1278,4 +1363,8 @@ const s = StyleSheet.create({
   iconBtnText: { fontSize: 16 },
   statsRow: { flexDirection: "row", gap: 10, marginBottom: 24 },
   sectionWrap: { marginBottom: 26 },
+  quotaRow:    { alignItems: 'center', marginTop: -8, marginBottom: 6 },
+  quotaText:   { color: 'rgba(245,222,179,0.35)', fontSize: 11, fontWeight: '600' },
+  quotaBanner: { backgroundColor: 'rgba(224,92,58,0.12)', borderWidth: 1, borderColor: 'rgba(224,92,58,0.30)', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8 },
+  quotaBannerText: { color: '#E05C3A', fontSize: 12, fontWeight: '700', textAlign: 'center' },
 });

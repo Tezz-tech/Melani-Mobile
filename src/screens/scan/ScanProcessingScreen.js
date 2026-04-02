@@ -305,7 +305,12 @@ export default function ScanProcessingScreen() {
     return (
       <ErrorView
         message={apiError}
-        onRetry={() => navigation.navigate('ScanCamera')}
+        onRetry={() => {
+          // Re-submit the same image — user doesn't need to re-take a photo
+          setApiError(null);
+          setStageIdx(0);
+          setProgress(0);
+        }}
         onHome={() => navigation.navigate('Main')}
       />
     );

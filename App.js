@@ -4,6 +4,7 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { MaterialIcons } from '@expo/vector-icons';
 
 // ── Auth context ──────────────────────────────────────────────
 import { AuthProvider, useAuth } from './src/store/AuthContext';
@@ -46,6 +47,12 @@ import PrivacyScreen       from './src/screens/settings/PrivacyScreen';
 import DeleteAccountScreen from './src/screens/settings/DeleteAccountScreen';
 import HelpScreen          from './src/screens/settings/HelpScreen';
 
+// Auth — additional screens
+import ForgotPasswordScreen from './src/screens/auth/ForgotPasswordScreen';
+
+// Error boundary
+import ErrorBoundary from './src/components/ErrorBoundary';
+
 // ─────────────────────────────────────────────────────────────
 
 const Stack = createNativeStackNavigator();
@@ -79,10 +86,46 @@ function MainTabNavigator() {
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600', letterSpacing: 0.5 },
       }}
     >
-      <Tab.Screen name="Home"        component={HomeScreen}        options={{ tabBarLabel: 'Home'    }} />
-      <Tab.Screen name="ScanHistory" component={ScanHistoryScreen} options={{ tabBarLabel: 'History' }} />
-      <Tab.Screen name="Routine"     component={RoutineScreen}     options={{ tabBarLabel: 'Routine' }} />
-      <Tab.Screen name="Profile"     component={ProfileScreen}     options={{ tabBarLabel: 'Profile' }} />
+      <Tab.Screen
+        name="Home"
+        component={HomeScreen}
+        options={{
+          tabBarLabel: 'Home',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialIcons name="home" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="ScanHistory"
+        component={ScanHistoryScreen}
+        options={{
+          tabBarLabel: 'History',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialIcons name="history" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="Routine"
+        component={RoutineScreen}
+        options={{
+          tabBarLabel: 'Routine',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialIcons name="spa" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="Profile"
+        component={ProfileScreen}
+        options={{
+          tabBarLabel: 'Profile',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialIcons name="person" size={size} color={color} />
+          ),
+        }}
+      />
     </Tab.Navigator>
   );
 }
@@ -139,9 +182,12 @@ function RootNavigator() {
           <Stack.Screen name="OTPVerify"    component={OTPVerifyScreen}    options={{ animation: 'slide_from_right' }} />
 
           {/* Onboarding — after OTP, before entering the app */}
-          <Stack.Screen name="Onboarding"   component={OnboardingScreen}   options={{ animation: 'slide_from_right' }} />
-          <Stack.Screen name="Consent"      component={ConsentScreen}      options={{ animation: 'slide_from_right' }} />
-          <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="Onboarding"      component={OnboardingScreen}      options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="Consent"          component={ConsentScreen}         options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="ProfileSetup"     component={ProfileSetupScreen}    options={{ animation: 'slide_from_right' }} />
+
+          {/* Password reset */}
+          <Stack.Screen name="ForgotPassword"   component={ForgotPasswordScreen}  options={{ animation: 'slide_from_bottom' }} />
         </>
       )}
     </Stack.Navigator>
@@ -155,11 +201,13 @@ function RootNavigator() {
 // ─────────────────────────────────────────────────────────────
 export default function App() {
   return (
-    <AuthProvider>
-      <NavigationContainer>
-        <RootNavigator />
-      </NavigationContainer>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <NavigationContainer>
+          <RootNavigator />
+        </NavigationContainer>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
 
