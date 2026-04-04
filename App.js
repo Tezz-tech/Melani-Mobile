@@ -170,7 +170,9 @@ function RootNavigator() {
           <Stack.Screen name="Privacy"        component={PrivacyScreen}        options={{ animation: 'slide_from_right'  }} />
           <Stack.Screen name="DeleteAccount"  component={DeleteAccountScreen}  options={{ animation: 'slide_from_right'  }} />
           <Stack.Screen name="Help"           component={HelpScreen}           options={{ animation: 'slide_from_right'  }} />
-          {/* ✅ FIX: removed stray <Tab.Screen> that was inside a Stack.Navigator here */}
+
+          {/* ✅ FIX: ProfileSetup also accessible from Profile → Skin Concerns */}
+          <Stack.Screen name="ProfileSetup"   component={ProfileSetupScreen}   options={{ animation: 'slide_from_right'  }} />
         </>
       ) : (
         // ── UNAUTHENTICATED STACK ─────────────────────────────

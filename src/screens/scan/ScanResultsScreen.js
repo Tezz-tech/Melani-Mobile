@@ -1038,8 +1038,14 @@ export default function ScanResultsScreen() {
   // Pull ingredients from top-level (where backend puts them) or insights
   const topIngredients = result.goodIngredients || insights.goodIngredients || result.topIngredients || [];
   const avoidIngredients = result.avoidIngredients || insights.avoidIngredients || [];
-  const routinePreview = result.routinePreview ||
-    result.routinePlan || { morning: [], night: [] };
+  // ✅ FIX: backend returns 'result.routine' (Scan schema field), NOT 'routinePreview'.
+  //  Previously this was always empty, breaking the routine preview section.
+  const routineSteps  = Array.isArray(result.routine) ? result.routine : [];
+  // Build a morning/night shape from the flat steps array for RoutinePreview
+  const routinePreview = {
+    morning: routineSteps.filter(s => s.timeOfDay === 'morning' || s.timeOfDay === 'both'),
+    night:   routineSteps.filter(s => s.timeOfDay === 'night'   || s.timeOfDay === 'both'),
+  };
   const disclaimer =
     result.disclaimer ||
     "This is a cosmetic, observational analysis only. Not a medical diagnosis.";

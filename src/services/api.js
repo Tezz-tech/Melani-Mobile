@@ -86,7 +86,12 @@ async function tryRefresh() {
     });
     const data = await res.json();
     if (!res.ok) return false;
-    await TokenStorage.setTokens(data.data.accessToken, refreshToken);
+
+    // ✅ FIX — save BOTH the new access AND the new rotated refresh token.
+    //  Before: saved old refreshToken — backend already invalidated it,
+    //          so the next refresh would always fail and log the user out.
+    const newRefresh = data.data?.refreshToken || refreshToken;
+    await TokenStorage.setTokens(data.data.accessToken, newRefresh);
     return true;
   } catch { return false; }
 }
@@ -125,7 +130,9 @@ export const AuthAPI = {
     return request('POST', '/auth/forgot-password', { email });
   },
   async resetPassword(token, password) {
-    return request('PATCH', `/auth/reset-password/${token}`, { password });
+    // ✅ FIX: backend registers this as POST, not PATCH
+    // authroutes.js: router.post('/reset-password/:token', auth.resetPassword)
+    return request('POST', `/auth/reset-password/${token}`, { password });
   },
   async isAuthenticated() {
     try {
@@ -138,6 +145,17 @@ export const AuthAPI = {
   async deleteAccount(password) {
     await request('DELETE', '/auth/delete-account', { password }, true);
     await TokenStorage.clearTokens();
+  },
+  async changePassword({ currentPassword, newPassword }) {
+    const data = await request('PATCH', '/auth/change-password', { currentPassword, newPassword }, true);
+    // Backend re-issues tokens on password change
+    if (data.data?.accessToken) {
+      await TokenStorage.setTokens(data.data.accessToken, data.data.refreshToken);
+    }
+    return data.data;
+  },
+  async registerPushToken(pushToken) {
+    return request('PATCH', '/auth/push-token', { pushToken }, true);
   },
 };
 

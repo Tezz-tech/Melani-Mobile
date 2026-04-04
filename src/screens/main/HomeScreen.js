@@ -1263,7 +1263,7 @@ export default function HomeScreen() {
           <SectionLabel
             text="Skin Status"
             actionLabel={latestScan ? "View History" : undefined}
-            onAction={() => navigation.navigate("HistoryTab")}
+            onAction={() => navigation.navigate("ScanHistory")}
           />
           <SkinStatusCard
             latestScan={latestScan}

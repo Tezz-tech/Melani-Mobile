@@ -496,8 +496,10 @@ export default function ScanHistoryScreen() {
 
   // ── Delete a scan ──────────────────────────────────────────
   const deleteScan = useCallback(async (id) => {
-    // Optimistic removal
-    setScans(prev => prev.filter(s => (s._id || s.scanId) !== id));
+    // ✅ FIX: coerce both sides to string — scan._id is a Mongo ObjectId
+    // object, strict !== comparison against a string always fails, so the
+    // optimistic removal never worked and deleted scans stayed on screen.
+    setScans(prev => prev.filter(s => String(s._id || s.scanId) !== String(id)));
     try {
       await ScanAPI.deleteScan(id);
       // Refresh stats after delete

@@ -254,7 +254,15 @@ export default function ScanProcessingScreen() {
   }, []);
 
   // ── Orchestrate: stages animation + API in parallel ───────
+  // retryKey increments on every retry to re-run this effect
+  const [retryKey, setRetryKey] = useState(0);
+
   useEffect(() => {
+    // Reset UI for each attempt
+    setStageIdx(0);
+    setProgress(0);
+    setApiError(null);
+
     const timers = [];
     let elapsed  = 0;
 
@@ -299,17 +307,16 @@ export default function ScanProcessingScreen() {
 
     timers.push(done);
     return () => timers.forEach(clearTimeout);
-  }, []);
+  }, [retryKey]); // ✅ re-runs on each retry
 
   if (apiError) {
     return (
       <ErrorView
         message={apiError}
         onRetry={() => {
-          // Re-submit the same image — user doesn't need to re-take a photo
-          setApiError(null);
-          setStageIdx(0);
-          setProgress(0);
+          // ✅ FIX: increment retryKey to re-run the useEffect
+          // which fires a brand-new API call with the same image
+          setRetryKey(k => k + 1);
         }}
         onHome={() => navigation.navigate('Main')}
       />
