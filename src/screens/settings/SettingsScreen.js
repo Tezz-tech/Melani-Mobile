@@ -226,7 +226,7 @@ export default function SettingsScreen() {
         {/* Header */}
         <FadeSlide delay={0} style={s.header}>
           <Text style={s.title}>Settings</Text>
-          <Text style={s.subtitle}>Customise your Melanin Scan experience</Text>
+          <Text style={s.subtitle}>Customise your Melani Scan experience</Text>
         </FadeSlide>
 
         {/* ── Account ── */}
@@ -275,7 +275,7 @@ export default function SettingsScreen() {
           <View style={s.aboutRow}>
             <View style={s.aboutLogoMark}><Text style={{ color:C.gold,fontSize:14,fontWeight:'900' }}>M</Text></View>
             <View>
-              <Text style={s.aboutName}>Melanin Scan</Text>
+              <Text style={s.aboutName}>Melani Scan</Text>
               <Text style={s.aboutVersion}>Version 1.0.0  ·  Build 100</Text>
             </View>
           </View>

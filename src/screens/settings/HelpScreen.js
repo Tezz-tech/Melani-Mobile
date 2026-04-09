@@ -587,7 +587,7 @@ export default function HelpScreen() {
 
             {/* App info footer */}
             <FadeSlide delay={940} style={s.appInfo}>
-              <Text style={s.appInfoText}>Melanin Scan  v1.0.0  ·  Build 100</Text>
+              <Text style={s.appInfoText}>Melani Scan  v1.0.0  ·  Build 100</Text>
               <Text style={s.appInfoSub}>Built for melanin-rich skin, by design.</Text>
             </FadeSlide>
           </>

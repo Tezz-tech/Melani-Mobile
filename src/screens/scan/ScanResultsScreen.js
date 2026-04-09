@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { ScanAPI } from "../../services/api";
+import { useAuth } from "../../store/AuthContext";
 
 const { width: W, height: H } = Dimensions.get("window");
 
@@ -596,7 +597,7 @@ function RoutinePreview({ routine }) {
   const rawSteps =
     tab === "morning" ? routine?.morning || [] : routine?.night || [];
   const steps = rawSteps.map((s) =>
-    typeof s === "string" ? s : s.product || s.action || s,
+    typeof s === "string" ? s : s.step || s.product || s.action || s.productType || "Step",
   );
 
   return (
@@ -896,6 +897,8 @@ const fn = StyleSheet.create({
 export default function ScanResultsScreen() {
   const navigation = useNavigation();
   const route = useRoute();
+  const { user } = useAuth();
+  const userPlan = user?.subscription?.plan || 'free';
   const { scanId, result: passedResult } = route.params || {};
 
   const [result,      setResult]      = useState(passedResult || null);
@@ -1083,8 +1086,8 @@ export default function ScanResultsScreen() {
           >
             <Text style={s.backArrow}>←</Text>
           </TouchableOpacity>
-          <View>
-            <Text style={s.title}>Your Results</Text>
+          <View style={s.headerCenter}>
+            <Text style={s.title} numberOfLines={1}>Your Results</Text>
             <Text style={s.date}>{scanDate}</Text>
           </View>
           <TouchableOpacity
@@ -1158,14 +1161,16 @@ export default function ScanResultsScreen() {
           </FadeSlide>
         )}
 
-        {/* Routine preview */}
-        <FadeSlide delay={560} style={s.section}>
-          <SectionLabel
-            text="Your Routine Preview"
-            sub="Full routine available in the Routine tab"
-          />
-          <RoutinePreview routine={routinePreview} />
-        </FadeSlide>
+        {/* Routine preview — Pro/Elite only */}
+        {userPlan !== 'free' && (
+          <FadeSlide delay={560} style={s.section}>
+            <SectionLabel
+              text="Your Routine Preview"
+              sub="Full routine available in the Routine tab"
+            />
+            <RoutinePreview routine={routinePreview} />
+          </FadeSlide>
+        )}
 
         {/* CTAs */}
         <FadeSlide delay={640} style={s.ctaBlock}>
@@ -1174,12 +1179,21 @@ export default function ScanResultsScreen() {
             onPress={() => navigation.navigate("ScanReport", { result })}
             style={{ marginBottom: 12 }}
           />
-          <TouchableOpacity
-            style={s.secondaryBtn}
-            onPress={() => navigation.navigate("Routine")}
-          >
-            <Text style={s.secondaryBtnText}>Go to My Routine →</Text>
-          </TouchableOpacity>
+          {userPlan === 'free' ? (
+            <TouchableOpacity
+              style={[s.secondaryBtn, { borderColor: 'rgba(200,134,10,0.40)' }]}
+              onPress={() => navigation.navigate("Subscription")}
+            >
+              <Text style={s.secondaryBtnText}>Unlock Routine — Upgrade to Pro →</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={s.secondaryBtn}
+              onPress={() => navigation.navigate("Routine")}
+            >
+              <Text style={s.secondaryBtnText}>Go to My Routine →</Text>
+            </TouchableOpacity>
+          )}
         </FadeSlide>
 
         <View style={{ height: 80 }} />
@@ -1189,7 +1203,7 @@ export default function ScanResultsScreen() {
 }
 
 const s = StyleSheet.create({
-  scroll: { paddingTop: 60, paddingHorizontal: 22 },
+  scroll: { paddingTop: 64, paddingHorizontal: 22 },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -1205,15 +1219,22 @@ const s = StyleSheet.create({
     borderColor: C.border,
     alignItems: "center",
     justifyContent: "center",
+    flexShrink: 0,
   },
   backArrow: { color: C.cream, fontSize: 18 },
+  headerCenter: {
+    flex: 1,
+    alignItems: "center",
+    paddingHorizontal: 8,
+  },
   title: {
     color: C.cream,
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: "800",
     letterSpacing: 0.2,
+    textAlign: "center",
   },
-  date: { color: C.creamDim, fontSize: 12, marginTop: 2 },
+  date: { color: C.creamDim, fontSize: 12, marginTop: 2, textAlign: "center" },
   shareBtn: {
     width: 42,
     height: 42,
@@ -1223,6 +1244,7 @@ const s = StyleSheet.create({
     borderColor: C.border,
     alignItems: "center",
     justifyContent: "center",
+    flexShrink: 0,
   },
   shareIcon: { color: C.gold, fontSize: 18, fontWeight: "700" },
   heroCard: {
@@ -1233,10 +1255,10 @@ const s = StyleSheet.create({
     padding: 20,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    gap: 16,
     marginBottom: 20,
   },
-  heroLeft: { flex: 1 },
+  heroLeft: { flex: 1, minWidth: 0 },
   heroTag: {
     flexDirection: "row",
     alignItems: "center",
@@ -1252,12 +1274,12 @@ const s = StyleSheet.create({
   },
   heroTitle: {
     color: C.cream,
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: "800",
-    lineHeight: 28,
+    lineHeight: 26,
     marginBottom: 6,
   },
-  heroSub: { color: C.creamDim, fontSize: 12 },
+  heroSub: { color: C.creamDim, fontSize: 12, flexWrap: "wrap" },
   section: { marginBottom: 26 },
   ctaBlock: { marginBottom: 10 },
   secondaryBtn: {
@@ -1265,7 +1287,13 @@ const s = StyleSheet.create({
     borderColor: C.border,
     borderRadius: 14,
     paddingVertical: 16,
+    paddingHorizontal: 12,
     alignItems: "center",
   },
-  secondaryBtnText: { color: C.cream, fontSize: 15, fontWeight: "600" },
+  secondaryBtnText: {
+    color: C.cream,
+    fontSize: 14,
+    fontWeight: "600",
+    textAlign: "center",
+  },
 });

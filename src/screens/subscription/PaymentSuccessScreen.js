@@ -855,7 +855,7 @@ export default function PaymentSuccessScreen() {
               letterSpacing: 2,
             }}
           >
-            MELANIN SCAN · {plan?.name?.toUpperCase()} MEMBER
+            MELANI SCAN · {plan?.name?.toUpperCase()} MEMBER
           </Text>
           <Text style={{ color: "rgba(245,222,179,0.18)", fontSize: 10 }}>
             Built for melanin-rich skin, by design.

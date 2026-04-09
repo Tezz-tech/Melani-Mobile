@@ -438,7 +438,6 @@ function ProductCard({ product }) {
     });
   };
 
-  const hasPrice    = product.priceNGN != null;
   const isNigerian  = (product.brandOrigin || '').toLowerCase().includes('nigerian') ||
                       (product.brandOrigin || '').toLowerCase().includes('african') ||
                       (product.brandOrigin || '').toLowerCase().includes('ghana');
@@ -464,10 +463,7 @@ function ProductCard({ product }) {
             </View>
             <Text style={pc.name}>{product.name || '—'}</Text>
           </View>
-          <View style={{ alignItems: 'flex-end', gap: 4 }}>
-            {hasPrice && <Text style={pc.price}>₦{Number(product.priceNGN).toLocaleString()}</Text>}
-            <Text style={pc.expandHint}>{expanded ? '▲' : '▼'}</Text>
-          </View>
+          <Text style={pc.expandHint}>{expanded ? '▲' : '▼'}</Text>
         </View>
 
         {/* ── Description ── */}
@@ -530,9 +526,6 @@ function ProductCard({ product }) {
                   <View key={li} style={pc.storeRow}>
                     <Text style={pc.storeIcon}>{STORE_ICONS[lnk.store] || STORE_ICONS.default}</Text>
                     <Text style={pc.storeName}>{lnk.store}</Text>
-                    {lnk.priceNGN != null && (
-                      <Text style={pc.storePrice}>₦{Number(lnk.priceNGN).toLocaleString()}</Text>
-                    )}
                   </View>
                 ))}
               </View>
@@ -1097,9 +1090,11 @@ export default function RoutineScreen() {
       if (r && (r.morning || r.night)) {
         const resetRoutine = applyDailyReset(r, dates);
 
-        const routineScanId = r.scanId || r.generatedFromScan;
+        // r.scan is the MongoDB ObjectId of the scan that generated this routine
+        const routineScanId = r.scan || r.scanId || r.generatedFromScan;
         const latestScanId  = scan?._id || scan?.scanId;
-        const isStale = latestScanId && routineScanId && routineScanId !== latestScanId;
+        const isStale = latestScanId && routineScanId &&
+          String(routineScanId) !== String(latestScanId);
 
         if (isStale && scan) {
           setRoutine(resetRoutine);
@@ -1165,10 +1160,10 @@ export default function RoutineScreen() {
     try {
       const result = await RoutineAPI.fitProduct(productInput.trim());
       if (result?.data?.routine) {
-        setRoutine(applyDailyReset(result.data.routine, completionDates));
+        setRoutine(result.data.routine);
       } else {
         const r = await RoutineAPI.getMyRoutine();
-        if (r) setRoutine(applyDailyReset(r, completionDates));
+        if (r) setRoutine(r);
       }
       setFitSuccess(result?.message || `"${productInput.trim()}" added to your routine!`);
       setProductInput('');
@@ -1186,6 +1181,7 @@ export default function RoutineScreen() {
       if (!routine?._id) return;
       const timeOfDay = activeTab === "AM" ? "morning" : "night";
 
+      // Optimistic update
       setRoutine((prev) => {
         if (!prev) return prev;
         return {
@@ -1199,9 +1195,13 @@ export default function RoutineScreen() {
       setSavingStep(order);
       try {
         const updated = await RoutineAPI.completeStep(routine._id, timeOfDay, order);
-        const resetUpdated = applyDailyReset(updated, completionDates);
-        setRoutine(resetUpdated);
+        // Use server state directly — do NOT run applyDailyReset here.
+        // applyDailyReset checks completionDates which is only written
+        // 1800ms after the last step is done, so calling it immediately
+        // after the API response would falsely wipe all completed flags.
+        if (updated) setRoutine(updated);
       } catch {
+        // Roll back optimistic update on error
         setRoutine((prev) => {
           if (!prev) return prev;
           return {
@@ -1215,7 +1215,7 @@ export default function RoutineScreen() {
         setSavingStep(null);
       }
     },
-    [routine, activeTab, completionDates],
+    [routine, activeTab],
   );
 
   // ── Derived state ─────────────────────────────────────────
@@ -1295,6 +1295,68 @@ export default function RoutineScreen() {
     const timeTab = getTimeBasedTab();
     if (timeTab !== activeTab) setActiveTab(timeTab);
   }, [activeTab, uid]);
+
+  // ─────────────────────────────────────────────────────────
+  //  Plan gating
+  // ─────────────────────────────────────────────────────────
+  const userPlan = user?.subscription?.plan || 'free';
+  if (userPlan === 'free') {
+    return (
+      <AfricanBG>
+        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+        <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+          <FadeSlide delay={0} style={s.header}>
+            <Text style={s.greeting}>{greeting}</Text>
+            <Text style={s.title}>My Routine</Text>
+            <Text style={s.subtitle}>Your personalised skincare schedule</Text>
+          </FadeSlide>
+
+          <FadeSlide delay={120} style={{ marginTop: 32 }}>
+            <View style={{
+              backgroundColor: '#1A0A02',
+              borderWidth: 1,
+              borderColor: 'rgba(200,134,10,0.30)',
+              borderRadius: 20,
+              padding: 28,
+              alignItems: 'center',
+            }}>
+              <Text style={{ fontSize: 40, marginBottom: 16 }}>🌿</Text>
+              <Text style={{ color: C.cream, fontSize: 20, fontWeight: '900', textAlign: 'center', marginBottom: 10 }}>
+                Routines are a Pro feature
+              </Text>
+              <Text style={{ color: C.creamDim, fontSize: 14, textAlign: 'center', lineHeight: 22, marginBottom: 24 }}>
+                Upgrade to Pro to unlock your personalised skincare routine — morning and night steps, product matching, and streak tracking built around your scan.
+              </Text>
+              <View style={{ width: '100%', gap: 10, marginBottom: 24 }}>
+                {[
+                  'Personalised AM & PM routine',
+                  'Products matched to each step',
+                  'Streak tracking & progress',
+                  'Weekly schedule extras',
+                ].map((f, i) => (
+                  <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <View style={{ width: 22, height: 22, borderRadius: 6, backgroundColor: 'rgba(200,134,10,0.15)', borderWidth: 1, borderColor: 'rgba(200,134,10,0.40)', alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ color: C.gold, fontSize: 11, fontWeight: '900' }}>✓</Text>
+                    </View>
+                    <Text style={{ color: C.cream, fontSize: 13, fontWeight: '500' }}>{f}</Text>
+                  </View>
+                ))}
+              </View>
+              <TouchableOpacity
+                style={{ backgroundColor: C.gold, borderRadius: 14, paddingVertical: 16, paddingHorizontal: 32, width: '100%', alignItems: 'center' }}
+                onPress={() => navigation.navigate('Subscription')}
+                activeOpacity={0.85}
+              >
+                <Text style={{ color: '#0B0300', fontSize: 15, fontWeight: '900', letterSpacing: 1 }}>UPGRADE TO PRO →</Text>
+              </TouchableOpacity>
+              <Text style={{ color: C.creamFaint, fontSize: 11, marginTop: 12 }}>Cancel anytime · Starting ₦2,500/mo</Text>
+            </View>
+          </FadeSlide>
+          <View style={{ height: 100 }} />
+        </ScrollView>
+      </AfricanBG>
+    );
+  }
 
   // ─────────────────────────────────────────────────────────
   //  Render
@@ -1425,20 +1487,35 @@ export default function RoutineScreen() {
               </Animated.View>
             )}
 
-            {/* ── Add My Product button ── */}
+            {/* ── Add My Product button (Elite only) ── */}
             <FadeSlide delay={700} style={{ marginTop: 6, marginBottom: 4 }}>
-              <TouchableOpacity
-                style={s.addProductBtn}
-                onPress={() => { setShowAddProduct(true); setFitError(null); setFitSuccess(null); }}
-                activeOpacity={0.85}
-              >
-                <Text style={s.addProductBtnIcon}>+</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.addProductBtnText}>I already use a product</Text>
-                  <Text style={s.addProductBtnSub}>Tap to add it to your routine</Text>
-                </View>
-                <Text style={{ color: C.gold, fontSize: 16 }}>→</Text>
-              </TouchableOpacity>
+              {userPlan === 'elite' ? (
+                <TouchableOpacity
+                  style={s.addProductBtn}
+                  onPress={() => { setShowAddProduct(true); setFitError(null); setFitSuccess(null); }}
+                  activeOpacity={0.85}
+                >
+                  <Text style={s.addProductBtnIcon}>+</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.addProductBtnText}>I already use a product</Text>
+                    <Text style={s.addProductBtnSub}>Tap to add it to your routine</Text>
+                  </View>
+                  <Text style={{ color: C.gold, fontSize: 16 }}>→</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[s.addProductBtn, { borderStyle: 'dashed', opacity: 0.75 }]}
+                  onPress={() => navigation.navigate('Subscription')}
+                  activeOpacity={0.85}
+                >
+                  <Text style={s.addProductBtnIcon}>✦</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.addProductBtnText}>Add your own products</Text>
+                    <Text style={s.addProductBtnSub}>Elite plan feature — tap to upgrade</Text>
+                  </View>
+                  <Text style={{ color: C.gold, fontSize: 13, fontWeight: '700' }}>Elite →</Text>
+                </TouchableOpacity>
+              )}
             </FadeSlide>
 
             {routine.weeklySchedule?.length > 0 && (

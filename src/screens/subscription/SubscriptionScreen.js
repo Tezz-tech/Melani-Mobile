@@ -53,14 +53,14 @@ const PLANS = [
     icon:     '◎',
     features: [
       { label:'3 scans per month',          included:true  },
-      { label:'Basic skin type detection',  included:true  },
-      { label:'2-step routine suggestion',  included:true  },
-      { label:'General melanin tips',       included:true  },
-      { label:'Full condition analysis',    included:false },
+      { label:'AI skin type detection',     included:true  },
+      { label:'Full condition analysis',    included:true  },
+      { label:'Product recommendations',    included:true  },
+      { label:'Melanin-specific insights',  included:true  },
+      { label:'Personalised routine',       included:false },
       { label:'Unlimited scans',            included:false },
-      { label:'Ingredient scanner',         included:false },
       { label:'Progress tracking',          included:false },
-      { label:'African product recs',       included:false },
+      { label:'Add personal products',      included:false },
       { label:'Priority AI model',          included:false },
     ],
   },
@@ -79,14 +79,14 @@ const PLANS = [
     features: [
       { label:'Unlimited scans',            included:true },
       { label:'Full condition analysis',    included:true },
-      { label:'Complete 5-step routine',    included:true },
-      { label:'African product recs',       included:true },
+      { label:'Product recommendations',    included:true },
+      { label:'Personalised AM & PM routine',included:true },
       { label:'Progress tracking',          included:true },
-      { label:'Ingredient scanner',         included:true },
+      { label:'Streak tracking',            included:true },
       { label:'Melanin-specific insights',  included:true },
       { label:'Export scan reports',        included:true },
+      { label:'Add personal products',      included:false },
       { label:'Priority AI model',          included:false },
-      { label:'1-on-1 skin consultation',   included:false },
     ],
   },
   {
@@ -103,13 +103,13 @@ const PLANS = [
     badge:    'BEST VALUE',
     features: [
       { label:'Everything in Pro',          included:true },
+      { label:'Add personal products to routine', included:true },
       { label:'Priority AI model',          included:true },
       { label:'Monthly skin consultation',  included:true },
       { label:'Custom ingredient formula',  included:true },
       { label:'Clinic referral network',    included:true },
       { label:'Early feature access',       included:true },
       { label:'Dedicated support',          included:true },
-      { label:'Family account (3 users)',   included:true },
       { label:'Scan comparison timeline',   included:true },
       { label:'Dermatologist review',       included:true },
     ],
@@ -237,14 +237,19 @@ function PlanCard({plan, selected, billing, currentPlan, onSelect, delay}) {
           shadowRadius:16,
           elevation:selected?8:0,
         }]}>
-          {plan.badge && (
-            <View style={[pc.badge,{backgroundColor:`${plan.color}20`,borderColor:`${plan.color}50`}]}>
-              <Text style={[pc.badgeText,{color:plan.color}]}>{plan.badge}</Text>
-            </View>
-          )}
-          {isCurrentPlan && (
-            <View style={[pc.currentBadge]}>
-              <Text style={pc.currentBadgeText}>CURRENT PLAN</Text>
+          {/* Badges rendered in normal flow above the header — no absolute overlap */}
+          {(plan.badge || isCurrentPlan) && (
+            <View style={pc.badgeRow}>
+              {plan.badge && (
+                <View style={[pc.badge,{backgroundColor:`${plan.color}20`,borderColor:`${plan.color}50`}]}>
+                  <Text style={[pc.badgeText,{color:plan.color}]}>{plan.badge}</Text>
+                </View>
+              )}
+              {isCurrentPlan && (
+                <View style={pc.currentBadge}>
+                  <Text style={pc.currentBadgeText}>✓ CURRENT PLAN</Text>
+                </View>
+              )}
             </View>
           )}
 
@@ -282,12 +287,13 @@ function PlanCard({plan, selected, billing, currentPlan, onSelect, delay}) {
   );
 }
 const pc = StyleSheet.create({
-  card:         {backgroundColor:C.bgCard,borderRadius:20,padding:20,position:'relative',overflow:'hidden'},
-  badge:        {position:'absolute',top:16,right:16,borderWidth:1,borderRadius:8,paddingHorizontal:8,paddingVertical:3},
-  badgeText:    {fontSize:9,fontWeight:'800',letterSpacing:1.5},
-  currentBadge: {position:'absolute',top:42,right:16,backgroundColor:'rgba(93,190,138,0.15)',borderWidth:1,borderColor:'rgba(93,190,138,0.40)',borderRadius:8,paddingHorizontal:8,paddingVertical:3},
+  card:            {backgroundColor:C.bgCard,borderRadius:20,padding:20,overflow:'hidden'},
+  badgeRow:        {flexDirection:'row',flexWrap:'wrap',gap:6,marginBottom:12},
+  badge:           {borderWidth:1,borderRadius:8,paddingHorizontal:8,paddingVertical:3,alignSelf:'flex-start'},
+  badgeText:       {fontSize:9,fontWeight:'800',letterSpacing:1.5},
+  currentBadge:    {backgroundColor:'rgba(93,190,138,0.15)',borderWidth:1,borderColor:'rgba(93,190,138,0.40)',borderRadius:8,paddingHorizontal:8,paddingVertical:3,alignSelf:'flex-start'},
   currentBadgeText:{color:C.success,fontSize:9,fontWeight:'800',letterSpacing:1},
-  header:       {flexDirection:'row',alignItems:'center',gap:14,marginBottom:16},
+  header:          {flexDirection:'row',alignItems:'center',gap:14,marginBottom:16},
   iconBox:      {width:44,height:44,borderRadius:12,borderWidth:1,alignItems:'center',justifyContent:'center'},
   icon:         {fontSize:20,fontWeight:'900'},
   planName:     {fontSize:20,fontWeight:'900',marginBottom:2},
@@ -322,9 +328,9 @@ function StickyBottom({plan, billing, loading, onContinue, currentPlan}) {
   return (
     <View style={sticky.wrap}>
       <View style={sticky.inner}>
-        <View>
-          {plan&&<Text style={[sticky.planName,{color:plan.color}]}>{plan.name} Plan</Text>}
-          <Text style={sticky.planPrice}>
+        <View style={{flexShrink:1,minWidth:80}}>
+          {plan&&<Text style={[sticky.planName,{color:plan.color}]} numberOfLines={1}>{plan.name} Plan</Text>}
+          <Text style={sticky.planPrice} numberOfLines={1}>
             {isFree ? 'Free forever' : billing==='yearly'&&plan.yearPrice ? plan.yearPrice : `${plan.price} / month`}
           </Text>
         </View>
@@ -352,9 +358,9 @@ function StickyBottom({plan, billing, loading, onContinue, currentPlan}) {
 }
 const sticky = StyleSheet.create({
   wrap:           {position:'absolute',bottom:0,left:0,right:0,backgroundColor:'rgba(11,3,0,0.96)',borderTopWidth:1,borderTopColor:C.border,paddingHorizontal:22,paddingTop:14,paddingBottom:36},
-  inner:          {flexDirection:'row',alignItems:'center',gap:16},
+  inner:          {flexDirection:'row',alignItems:'center',gap:12},
   planName:       {fontSize:11,fontWeight:'800',letterSpacing:1,marginBottom:2},
-  planPrice:      {color:C.creamDim,fontSize:12,fontWeight:'600'},
+  planPrice:      {color:C.creamDim,fontSize:12,fontWeight:'600',numberOfLines:1},
   btn:            {backgroundColor:C.gold,borderRadius:14,paddingVertical:16,alignItems:'center',overflow:'hidden',shadowColor:C.gold,shadowOffset:{width:0,height:4},shadowOpacity:0.45,shadowRadius:14,elevation:8},
   btnFree:        {backgroundColor:'rgba(200,134,10,0.12)',borderWidth:1.5,borderColor:C.border,shadowOpacity:0},
   btnDisabled:    {backgroundColor:'rgba(93,190,138,0.12)',borderWidth:1.5,borderColor:'rgba(93,190,138,0.35)',shadowOpacity:0},

@@ -2,9 +2,11 @@
 import React, { useRef, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Animated,
-  StatusBar, ScrollView, Dimensions, Share,
+  StatusBar, ScrollView, Dimensions, Alert, ActivityIndicator,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 
 const { width: W, height: H } = Dimensions.get('window');
 
@@ -91,9 +93,33 @@ const DEFAULT_RESULT = {
   disclaimer: 'This report is a cosmetic, observational skin analysis. It is not a medical diagnosis and does not replace professional dermatological advice. Results are based on image analysis and may not capture all conditions.',
 };
 
+// ── Extract all unique products from routine step matchedProducts ──
+function extractProductsFromRoutine(routine) {
+  const seen = new Set();
+  const out  = [];
+  for (const step of (routine || [])) {
+    for (const p of (step.matchedProducts || [])) {
+      const key = (p.name || '').toLowerCase().trim();
+      if (key && !seen.has(key)) { seen.add(key); out.push(p); }
+    }
+  }
+  return out;
+}
+
 // ── Deep merge helper ─────────────────────────────────────────────
 function mergeResultWithDefault(incoming) {
   if (!incoming) return DEFAULT_RESULT;
+
+  // Build the best available product list:
+  // 1. scan.products (AI-matched at scan time)  — most complete
+  // 2. products embedded in routine matchedProducts  — guaranteed to match routine
+  // 3. legacy productRecs  4. default placeholder
+  const routineProducts = extractProductsFromRoutine(incoming.routine);
+  const resolvedProductRecs =
+    (incoming.products?.length        ? incoming.products        : null) ||
+    (routineProducts.length           ? routineProducts          : null) ||
+    incoming.productRecs              ||
+    DEFAULT_RESULT.productRecs;
 
   return {
     ...DEFAULT_RESULT,
@@ -102,10 +128,8 @@ function mergeResultWithDefault(incoming) {
     score: incoming.overallScore ?? incoming.score ?? DEFAULT_RESULT.score,
     // Ensure arrays exist
     conditions:          incoming.conditions          || DEFAULT_RESULT.conditions,
-    // Products come from scan.products (AI-matched) — fall back to legacy productRecs
-    productRecs:         incoming.products            ||
-                         incoming.productRecs         ||
-                         DEFAULT_RESULT.productRecs,
+    // Products: scan products → routine matchedProducts → legacy → default
+    productRecs:         resolvedProductRecs,
     weeklyPlan:          incoming.weeklyPlan          || DEFAULT_RESULT.weeklyPlan,
     progressMilestones:  incoming.progressMilestones  ||
                          incoming.progressMilestones  ||
@@ -172,27 +196,31 @@ function FadeSlide({ delay=0, from=16, children, style }) {
 }
 
 // ── Gold button ───────────────────────────────────────────────
-function GoldButton({ label, onPress, icon, style }) {
+function GoldButton({ label, onPress, icon, style, loading }) {
   const scale = useRef(new Animated.Value(1)).current;
   return (
     <Animated.View style={[{transform:[{scale}]},style]}>
       <TouchableOpacity
-        style={gbtn.root} onPress={onPress} activeOpacity={1}
-        onPressIn={()=>Animated.spring(scale,{toValue:0.96,useNativeDriver:true}).start()}
-        onPressOut={()=>Animated.spring(scale,{toValue:1,useNativeDriver:true}).start()}
+        style={[gbtn.root, loading && gbtn.rootLoading]} onPress={loading ? null : onPress} activeOpacity={1}
+        onPressIn={()=>{ if(!loading) Animated.spring(scale,{toValue:0.96,useNativeDriver:true}).start(); }}
+        onPressOut={()=>{ if(!loading) Animated.spring(scale,{toValue:1,  useNativeDriver:true}).start(); }}
       >
         <View style={gbtn.shimmer}/>
-        {icon && <Text style={gbtn.icon}>{icon}</Text>}
-        <Text style={gbtn.label}>{label}</Text>
+        {loading
+          ? <ActivityIndicator size="small" color="#0F0500" style={{marginRight:6}}/>
+          : icon && <Text style={gbtn.icon}>{icon}</Text>
+        }
+        <Text style={gbtn.label}>{loading ? 'Generating PDF…' : label}</Text>
       </TouchableOpacity>
     </Animated.View>
   );
 }
 const gbtn = StyleSheet.create({
-  root:    { backgroundColor:C.gold,borderRadius:14,paddingVertical:16,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:8,overflow:'hidden',shadowColor:C.gold,shadowOffset:{width:0,height:6},shadowOpacity:0.45,shadowRadius:16,elevation:10 },
-  shimmer: { position:'absolute',top:0,left:0,right:0,height:'55%',backgroundColor:'rgba(255,255,255,0.10)',borderRadius:14 },
-  icon:    { fontSize:16 },
-  label:   { color:'#0F0500',fontSize:15,fontWeight:'800',letterSpacing:1.2,textTransform:'uppercase' },
+  root:        { backgroundColor:C.gold,borderRadius:14,paddingVertical:16,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:8,overflow:'hidden',shadowColor:C.gold,shadowOffset:{width:0,height:6},shadowOpacity:0.45,shadowRadius:16,elevation:10 },
+  rootLoading: { opacity:0.75 },
+  shimmer:     { position:'absolute',top:0,left:0,right:0,height:'55%',backgroundColor:'rgba(255,255,255,0.10)',borderRadius:14 },
+  icon:        { fontSize:16 },
+  label:       { color:'#0F0500',fontSize:15,fontWeight:'800',letterSpacing:1.2,textTransform:'uppercase' },
 });
 
 // ── Section wrapper ───────────────────────────────────────────
@@ -305,9 +333,9 @@ const cv = StyleSheet.create({
   infoLabel:  { color:C.creamDim,fontSize:10,fontWeight:'600',textTransform:'uppercase',letterSpacing:0.8 },
   infoValue:  { color:C.cream,fontSize:22,fontWeight:'900' },
   infoSep:    { width:1,height:40,backgroundColor:C.border },
-  metaRow:    { flexDirection:'row',justifyContent:'space-between',marginBottom:14 },
-  metaDate:   { color:C.creamDim,fontSize:11 },
-  metaId:     { color:'rgba(200,134,10,0.45)',fontSize:10,fontWeight:'700',letterSpacing:1 },
+  metaRow:    { flexDirection:'row',justifyContent:'space-between',alignItems:'center',marginBottom:14,gap:8 },
+  metaDate:   { color:C.creamDim,fontSize:11,flex:1,flexShrink:1 },
+  metaId:     { color:'rgba(200,134,10,0.45)',fontSize:10,fontWeight:'700',letterSpacing:1,flexShrink:0 },
   condChips:  { flexDirection:'row',flexWrap:'wrap',gap:6 },
   chip:       { borderWidth:1,borderRadius:20,paddingHorizontal:10,paddingVertical:4 },
   chipText:   { color:C.creamDim,fontSize:10,fontWeight:'600' },
@@ -498,41 +526,47 @@ function FullRoutinePlan({ plan }) {
         ))}
       </View>
       <View style={frp.steps}>
-        {(steps || []).map((step,i)=>(
-          <View key={i} style={frp.stepRow}>
-            <View style={[frp.num,{backgroundColor:`${accentColor}18`,borderColor:`${accentColor}40`}]}>
-              <Text style={[frp.numText,{color:accentColor}]}>{step.step}</Text>
-            </View>
-            <View style={{flex:1}}>
-              <View style={frp.stepTop}>
-                <Text style={frp.action}>{step.action}</Text>
+        {(steps || []).map((step,i)=>{
+          // Support both backend field names (step/productType/notes) and legacy (action/product/note)
+          const stepName    = step.step    || step.action      || '';
+          const productName = step.productType || step.product || '';
+          const noteText    = step.notes   || step.note        || step.keyIngredient || '';
+          return (
+            <View key={i} style={frp.stepRow}>
+              {/* Step number circle — never put text longer than 2 chars here */}
+              <View style={frp.timelineCol}>
+                <View style={[frp.num,{backgroundColor:`${accentColor}18`,borderColor:`${accentColor}40`}]}>
+                  <Text style={[frp.numText,{color:accentColor}]}>{i+1}</Text>
+                </View>
+                {i < steps.length-1 && <View style={[frp.connector,{backgroundColor:`${accentColor}30`}]}/>}
               </View>
-              <Text style={frp.product}>{step.product}</Text>
-              <Text style={frp.note}>{step.note}</Text>
+              <View style={frp.stepContent}>
+                <Text style={[frp.action,{color:accentColor}]}>{stepName.toUpperCase()}</Text>
+                {productName ? <Text style={frp.product}>{productName}</Text> : null}
+                {noteText    ? <Text style={frp.note}>{noteText}</Text>        : null}
+              </View>
             </View>
-            {i < steps.length-1 && (
-              <View style={[frp.connector,{backgroundColor:`${accentColor}30`}]}/>
-            )}
-          </View>
-        ))}
+          );
+        })}
       </View>
     </View>
   );
 }
 const frp = StyleSheet.create({
-  wrap:     { backgroundColor:C.bgCard,borderWidth:1,borderColor:C.border,borderRadius:16,overflow:'hidden' },
-  tabs:     { flexDirection:'row',borderBottomWidth:1,borderBottomColor:C.border },
-  tab:      { flex:1,paddingVertical:13,alignItems:'center',borderBottomWidth:2,borderBottomColor:'transparent' },
-  tabText:  { color:C.creamDim,fontSize:13,fontWeight:'600' },
-  steps:    { padding:16 },
-  stepRow:  { flexDirection:'row',gap:12,marginBottom:16,position:'relative' },
-  num:      { width:30,height:30,borderRadius:8,borderWidth:1.5,alignItems:'center',justifyContent:'center',marginTop:2 },
-  numText:  { fontSize:12,fontWeight:'900' },
-  stepTop:  { flexDirection:'row',alignItems:'center',gap:8,marginBottom:3 },
-  action:   { color:C.creamDim,fontSize:10,fontWeight:'700',textTransform:'uppercase',letterSpacing:1 },
-  product:  { color:C.cream,fontSize:14,fontWeight:'700',marginBottom:3 },
-  note:     { color:C.creamDim,fontSize:12,lineHeight:17 },
-  connector:{ position:'absolute',left:14,top:32,width:2,height:16,borderRadius:1 },
+  wrap:        { backgroundColor:C.bgCard,borderWidth:1,borderColor:C.border,borderRadius:16,overflow:'hidden' },
+  tabs:        { flexDirection:'row',borderBottomWidth:1,borderBottomColor:C.border },
+  tab:         { flex:1,paddingVertical:13,alignItems:'center',borderBottomWidth:2,borderBottomColor:'transparent' },
+  tabText:     { color:C.creamDim,fontSize:13,fontWeight:'600' },
+  steps:       { padding:16 },
+  stepRow:     { flexDirection:'row',gap:14,marginBottom:0 },
+  timelineCol: { alignItems:'center',width:36 },
+  num:         { width:36,height:36,borderRadius:10,borderWidth:1.5,alignItems:'center',justifyContent:'center' },
+  numText:     { fontSize:14,fontWeight:'900' },
+  connector:   { width:2,flex:1,minHeight:18,borderRadius:1,marginVertical:3 },
+  stepContent: { flex:1,paddingBottom:20,paddingTop:4 },
+  action:      { fontSize:10,fontWeight:'800',letterSpacing:1.2,marginBottom:4 },
+  product:     { color:C.cream,fontSize:14,fontWeight:'700',marginBottom:4 },
+  note:        { color:C.creamDim,fontSize:12,lineHeight:17 },
 });
 
 // ── Product recommendations ────────────────────────────────────────────
@@ -549,10 +583,7 @@ function ProductRecCard({ item, index }) {
     });
   };
 
-  // Support both real backend fields and the old hardcoded fallback format
-  const priceDisplay = item.priceNGN != null
-    ? `₦${Number(item.priceNGN).toLocaleString()}`
-    : (item.price || '');
+  const priceDisplay = ''; // pricing removed
   const descText = item.description || item.why || '';
   const links    = Array.isArray(item.affiliateLinks) ? item.affiliateLinks : [];
   const isNigerian = (item.brandOrigin || '').toLowerCase().includes('nigerian') ||
@@ -590,9 +621,6 @@ function ProductRecCard({ item, index }) {
             <View key={li} style={prc.storeRow}>
               <Text style={prc.storeIcon}>{REPORT_STORE_ICONS[lnk.store] || REPORT_STORE_ICONS.default}</Text>
               <Text style={prc.storeName}>{lnk.store}</Text>
-              {lnk.priceNGN != null && (
-                <Text style={prc.storePrice}>₦{Number(lnk.priceNGN).toLocaleString()}</Text>
-              )}
             </View>
           ))}
         </View>
@@ -731,8 +759,8 @@ function ProgressMilestones({ milestones }) {
             {i < milestones.length-1 && <View style={pm.line}/>}
           </View>
           <View style={pm.content}>
-            <Text style={pm.milestoneTitle}>{m.title}</Text>
-            <Text style={pm.milestoneDesc}>{m.desc}</Text>
+            <Text style={pm.milestoneTitle}>{m.label || m.title}</Text>
+            <Text style={pm.milestoneDesc}>{m.description || m.desc}</Text>
           </View>
         </View>
       ))}
@@ -772,15 +800,303 @@ const dc = StyleSheet.create({
   text:  { color:'rgba(245,222,179,0.45)',fontSize:12,lineHeight:18 },
 });
 
-// ── Share handler ─────────────────────────────────────────────
-async function handleShare(result) {
+// ── PDF HTML generator ────────────────────────────────────────
+function generateReportHTML(result) {
+  const scoreColor = result.score>=75?'#5DBE8A':result.score>=55?'#E8A020':'#E05C3A';
+  const scoreLabel = result.score>=75?'Excellent':result.score>=65?'Good':result.score>=50?'Fair':'Needs Attention';
+  const formattedDate = new Date(result.date).toLocaleDateString('en-NG',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const sevColor = s => s==='Mild'?'#5DBE8A':s==='Moderate'?'#E8A020':'#E05C3A';
+
+  const condChips = result.conditions.map(c=>{
+    const col=sevColor(c.severity);
+    return `<span style="border:1px solid ${col}40;background:${col}18;border-radius:20px;padding:4px 12px;font-size:10px;font-weight:600;color:${col};margin:3px 3px 3px 0;display:inline-block;">${c.name.split(' ').slice(-1)[0]}</span>`;
+  }).join('');
+
+  const conditionsHTML = result.conditions.map(c=>{
+    const col=sevColor(c.severity);
+    return `
+      <div style="background:#1A0A02;border:1px solid rgba(200,134,10,0.22);border-radius:14px;padding:16px;margin-bottom:10px;">
+        <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:10px;">
+          <div style="width:40px;height:40px;min-width:40px;border-radius:10px;border:1px solid ${col}40;background:${col}18;display:flex;align-items:center;justify-content:center;font-size:16px;">${c.icon||'●'}</div>
+          <div style="flex:1;">
+            <div style="color:#F5DEB3;font-size:14px;font-weight:700;margin-bottom:4px;">${c.name}</div>
+            <div style="display:flex;align-items:center;gap:5px;">
+              <span style="width:6px;height:6px;border-radius:50%;background:${col};display:inline-block;"></span>
+              <span style="color:${col};font-size:11px;font-weight:700;">${c.severity}</span>
+            </div>
+          </div>
+        </div>
+        <div style="background:rgba(200,134,10,0.07);border-radius:10px;padding:12px;border:1px solid rgba(200,134,10,0.22);">
+          <div style="color:#C8860A;font-size:10px;font-weight:700;letter-spacing:0.8px;margin-bottom:6px;">🧬  MELANIN-SPECIFIC NOTE</div>
+          <div style="color:rgba(245,222,179,0.6);font-size:12px;line-height:1.7;">${c.melaninNote||''}</div>
+        </div>
+      </div>`;
+  }).join('');
+
+  const renderSteps = (steps, type) => {
+    const ac = type==='am' ? '#E8A020' : '#7B6DC8';
+    return (steps||[]).map((step,i)=>{
+      const name    = step.step    || step.action      || '';
+      const product = step.productType || step.product || '';
+      const note    = step.notes   || step.note        || step.keyIngredient || '';
+      const isLast  = i === steps.length-1;
+      return `
+        <div style="display:flex;gap:14px;">
+          <div style="display:flex;flex-direction:column;align-items:center;width:36px;min-width:36px;">
+            <div style="width:36px;height:36px;border-radius:10px;border:1.5px solid ${ac}40;background:${ac}18;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;color:${ac};">${i+1}</div>
+            ${!isLast?`<div style="width:2px;flex:1;min-height:18px;border-radius:1px;background:${ac}30;margin:3px 0;"></div>`:''}
+          </div>
+          <div style="flex:1;padding-bottom:${isLast?4:20}px;padding-top:4px;">
+            <div style="color:${ac};font-size:10px;font-weight:800;letter-spacing:1.2px;margin-bottom:4px;">${name.toUpperCase()}</div>
+            ${product?`<div style="color:#F5DEB3;font-size:14px;font-weight:700;margin-bottom:4px;">${product}</div>`:''}
+            ${note?`<div style="color:rgba(245,222,179,0.6);font-size:12px;line-height:1.5;">${note}</div>`:''}
+          </div>
+        </div>`;
+    }).join('');
+  };
+
+  const productsHTML = (result.productRecs||[]).map(p=>{
+    const ings = (p.keyIngredients||[]).slice(0,5).map(ing=>`<span style="background:rgba(200,134,10,0.13);border:1px solid rgba(200,134,10,0.22);border-radius:6px;padding:2px 6px;color:rgba(245,222,179,0.55);font-size:9px;font-weight:600;margin:2px;display:inline-block;">${ing}</span>`).join('');
+    const icon = p.category==='spf'?'☀':p.category==='serum'?'✦':p.category==='eye-cream'?'◎':'◈';
+    return `
+      <div style="background:#1A0A02;border:1px solid rgba(200,134,10,0.22);border-radius:14px;padding:14px;margin-bottom:10px;display:flex;gap:12px;align-items:flex-start;">
+        <div style="width:38px;height:38px;min-width:38px;border-radius:10px;background:rgba(200,134,10,0.13);border:1px solid rgba(200,134,10,0.22);display:flex;align-items:center;justify-content:center;font-size:15px;">${icon}</div>
+        <div style="flex:1;">
+          ${p.brand?`<div style="color:#C8860A;font-size:11px;font-weight:700;margin-bottom:3px;">${p.brand}</div>`:''}
+          <div style="color:#F5DEB3;font-size:14px;font-weight:800;margin-bottom:4px;">${p.name||''}</div>
+          ${p.description||p.why?`<div style="color:rgba(245,222,179,0.6);font-size:12px;line-height:1.5;margin-bottom:6px;">${p.description||p.why}</div>`:''}
+          ${ings?`<div style="margin-top:4px;">${ings}</div>`:''}
+          ${p.productStep?`<span style="display:inline-block;margin-top:6px;background:rgba(200,134,10,0.10);border:1px solid rgba(200,134,10,0.25);border-radius:6px;padding:2px 7px;color:#C8860A;font-size:9px;font-weight:700;letter-spacing:0.5px;">${p.productStep} step • ${p.routineSlot||'daily'}</span>`:''}
+          ${p.howToUse?`<div style="margin-top:8px;background:rgba(245,222,179,0.04);border-left:2px solid #C8860A;border-radius:8px;padding:8px 10px;"><div style="color:#C8860A;font-size:9px;font-weight:700;letter-spacing:1px;margin-bottom:4px;">HOW TO USE</div><div style="color:rgba(245,222,179,0.6);font-size:11px;line-height:1.6;">${p.howToUse}</div></div>`:''}
+        </div>
+      </div>`;
+  }).join('');
+
+  const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  const today = days[new Date().getDay()-1]||'Mon';
+  const weeklyHTML = (result.weeklyPlan||[]).map(item=>{
+    const isToday = item.day===today;
+    const dots = (item.tasks||[]).map(()=>`<div style="width:5px;height:5px;border-radius:50%;background:${isToday?'#C8860A':'rgba(200,134,10,0.25)'};margin:2px auto;"></div>`).join('');
+    return `<div style="flex:1;background:${isToday?'rgba(200,134,10,0.13)':'#1A0A02'};border:1px solid ${isToday?'#C8860A':'rgba(200,134,10,0.22)'};border-radius:10px;padding:8px;text-align:center;">
+      <div style="color:${isToday?'#C8860A':'rgba(245,222,179,0.55)'};font-size:10px;font-weight:700;margin-bottom:5px;">${item.day}</div>
+      ${dots}
+      <div style="color:${isToday?'#C8860A':'rgba(245,222,179,0.55)'};font-size:11px;font-weight:800;margin-top:3px;">${item.tasks?.length||0}</div>
+    </div>`;
+  }).join('');
+
+  const milestonesHTML = (result.progressMilestones||[]).map((m,i,arr)=>{
+    const isFirst=i===0, isLast=i===arr.length-1;
+    return `
+      <div style="display:flex;gap:16px;">
+        <div style="display:flex;flex-direction:column;align-items:center;width:46px;min-width:46px;">
+          <div style="width:46px;height:46px;border-radius:50%;background:${isFirst?'rgba(200,134,10,0.20)':'rgba(200,134,10,0.13)'};border:1.5px solid ${isFirst?'#C8860A':'rgba(200,134,10,0.22)'};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:#C8860A;">${m.week}w</div>
+          ${!isLast?`<div style="width:1.5px;flex:1;min-height:20px;background:rgba(200,134,10,0.22);margin:4px 0;"></div>`:''}
+        </div>
+        <div style="flex:1;padding-bottom:${isLast?4:24}px;padding-top:10px;">
+          <div style="color:#F5DEB3;font-size:14px;font-weight:800;margin-bottom:5px;">${m.label||m.title||''}</div>
+          <div style="color:rgba(245,222,179,0.6);font-size:12px;line-height:1.7;">${m.description||m.desc||''}</div>
+        </div>
+      </div>`;
+  }).join('');
+
+  const goodIngs = (result.melaninInsights.goodIngredients||[]).map(ing=>
+    `<span style="display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(93,190,138,0.30);background:rgba(93,190,138,0.10);border-radius:20px;padding:6px 12px;margin:3px;"><span style="color:#5DBE8A;font-weight:900;font-size:10px;">✓</span><span style="color:#5DBE8A;font-size:12px;font-weight:600;">${ing}</span></span>`
+  ).join('');
+  const avoidIngs = (result.melaninInsights.avoidIngredients||[]).map(ing=>
+    `<span style="display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(224,92,58,0.30);background:rgba(224,92,58,0.10);border-radius:20px;padding:6px 12px;margin:3px;"><span style="color:#E05C3A;font-weight:900;font-size:10px;">✕</span><span style="color:#E05C3A;font-size:12px;font-weight:600;">${ing}</span></span>`
+  ).join('');
+
+  const pihColor = result.melaninInsights.pihRisk==='Low'?'#5DBE8A':result.melaninInsights.pihRisk==='Moderate'?'#E8A020':'#E05C3A';
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  body{font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;background:#0F0500;color:#F5DEB3;}
+  .page{padding:40px 36px;max-width:820px;margin:0 auto;}
+  .section{margin-bottom:28px;}
+  .sec-header{display:flex;align-items:center;gap:10px;margin-bottom:14px;}
+  .accent-bar{width:4px;height:18px;border-radius:2px;background:#C8860A;flex-shrink:0;}
+  .sec-title{color:#F5DEB3;font-size:16px;font-weight:800;}
+  .sec-icon{font-size:18px;margin-left:auto;}
+  .sub{color:rgba(245,222,179,0.55);font-size:12px;margin-bottom:12px;margin-top:-6px;}
+  @media print{body{background:#0F0500;}*{-webkit-print-color-adjust:exact;}}
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- ── HEADER ── -->
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:32px;padding-bottom:20px;border-bottom:1.5px solid rgba(200,134,10,0.35);">
+  <div style="display:flex;align-items:center;gap:14px;">
+    <div style="width:54px;height:54px;border-radius:14px;background:rgba(200,134,10,0.13);border:1.5px solid #C8860A;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:900;color:#C8860A;letter-spacing:-1px;">M</div>
+    <div>
+      <div style="color:#C8860A;font-size:12px;font-weight:800;letter-spacing:3.5px;text-transform:uppercase;">MELANI SCAN</div>
+      <div style="color:rgba(245,222,179,0.55);font-size:14px;font-weight:600;margin-top:3px;">AI Skin Analysis Report</div>
+      <div style="color:rgba(245,222,179,0.30);font-size:10px;margin-top:2px;">Built for melanin-rich skin, by design.</div>
+    </div>
+  </div>
+  <div style="text-align:right;">
+    <div style="color:rgba(245,222,179,0.45);font-size:11px;">${formattedDate}</div>
+    <div style="color:rgba(200,134,10,0.55);font-size:10px;font-weight:700;letter-spacing:1px;margin-top:4px;">Report ID: ${result.scanId}</div>
+  </div>
+</div>
+
+<!-- ── COVER CARD ── -->
+<div style="background:#120701;border:1.5px solid rgba(200,134,10,0.5);border-radius:20px;padding:24px;margin-bottom:28px;">
+  <div style="display:flex;margin-bottom:16px;">
+    <div style="flex:1;text-align:center;padding:0 8px;">
+      <div style="color:rgba(245,222,179,0.55);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">Skin Score</div>
+      <div style="font-size:34px;font-weight:900;color:${scoreColor};">${result.score}<span style="font-size:16px;">/100</span></div>
+      <div style="font-size:11px;font-weight:700;color:${scoreColor};margin-top:2px;">${scoreLabel}</div>
+    </div>
+    <div style="width:1px;background:rgba(200,134,10,0.22);"></div>
+    <div style="flex:1;text-align:center;padding:0 8px;">
+      <div style="color:rgba(245,222,179,0.55);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">Skin Type</div>
+      <div style="font-size:24px;font-weight:900;color:#F5DEB3;">${result.skinType}</div>
+    </div>
+    <div style="width:1px;background:rgba(200,134,10,0.22);"></div>
+    <div style="flex:1;text-align:center;padding:0 8px;">
+      <div style="color:rgba(245,222,179,0.55);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">Fitzpatrick</div>
+      <div style="font-size:24px;font-weight:900;color:#F5DEB3;">${result.melaninInsights.fitzpatrickEst}</div>
+    </div>
+  </div>
+  <div style="height:1px;background:rgba(200,134,10,0.22);margin-bottom:14px;"></div>
+  <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+    <span style="color:rgba(245,222,179,0.55);font-size:11px;font-weight:600;">Overall Skin Health</span>
+    <span style="font-size:11px;font-weight:700;color:${scoreColor};">${scoreLabel}</span>
+  </div>
+  <div style="background:rgba(200,134,10,0.22);border-radius:6px;height:10px;overflow:hidden;margin-bottom:16px;">
+    <div style="width:${result.score}%;height:100%;background:${scoreColor};border-radius:6px;"></div>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;">${condChips}</div>
+</div>
+
+<!-- ── DETECTED CONDITIONS ── -->
+<div class="section">
+  <div class="sec-header"><div class="accent-bar"></div><span class="sec-title">Detected Conditions</span><span class="sec-icon">◑</span></div>
+  ${conditionsHTML}
+</div>
+
+<!-- ── MELANIN INSIGHTS ── -->
+<div class="section">
+  <div class="sec-header"><div class="accent-bar"></div><span class="sec-title">Melanin Insights</span><span class="sec-icon">🧬</span></div>
+  <div style="background:#1A0A02;border:1px solid rgba(200,134,10,0.22);border-radius:16px;padding:16px;">
+    <div style="display:flex;gap:24px;margin-bottom:14px;">
+      <div style="flex:1;">
+        <div style="color:rgba(245,222,179,0.55);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:3px;">PIH Risk</div>
+        <div style="font-size:16px;font-weight:900;color:${pihColor};">${result.melaninInsights.pihRisk}</div>
+      </div>
+      <div style="flex:1;">
+        <div style="color:rgba(245,222,179,0.55);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:3px;">Fitzpatrick Est.</div>
+        <div style="font-size:16px;font-weight:900;color:#F5DEB3;">${result.melaninInsights.fitzpatrickEst}</div>
+      </div>
+    </div>
+    <div style="height:1px;background:rgba(200,134,10,0.22);margin-bottom:14px;"></div>
+    <div style="margin-bottom:14px;">
+      <div style="color:#C8860A;font-size:11px;font-weight:700;letter-spacing:0.8px;margin-bottom:6px;">☀  SPF Guidance</div>
+      <div style="color:rgba(245,222,179,0.6);font-size:12px;line-height:1.7;">${result.melaninInsights.spfNote}</div>
+    </div>
+    <div style="height:1px;background:rgba(200,134,10,0.22);margin-bottom:14px;"></div>
+    <div>
+      <div style="color:#C8860A;font-size:11px;font-weight:700;letter-spacing:0.8px;margin-bottom:6px;">⚠  Sensitivity Flags</div>
+      <div style="color:rgba(245,222,179,0.6);font-size:12px;line-height:1.7;">${result.melaninInsights.sensitivity}</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── RECOMMENDED INGREDIENTS ── -->
+<div class="section">
+  <div class="sec-header"><div class="accent-bar"></div><span class="sec-title">Recommended Ingredients</span><span class="sec-icon">✓</span></div>
+  <div style="display:flex;flex-wrap:wrap;">${goodIngs}</div>
+</div>
+
+<!-- ── AVOID THESE ── -->
+<div class="section">
+  <div class="sec-header"><div class="accent-bar"></div><span class="sec-title">Avoid These</span><span class="sec-icon">✕</span></div>
+  <div style="display:flex;flex-wrap:wrap;">${avoidIngs}</div>
+</div>
+
+<!-- ── COMPLETE ROUTINE PLAN ── -->
+<div class="section">
+  <div class="sec-header"><div class="accent-bar"></div><span class="sec-title">Complete Routine Plan</span><span class="sec-icon">✦</span></div>
+  <div style="background:#1A0A02;border:1px solid rgba(200,134,10,0.22);border-radius:16px;overflow:hidden;margin-bottom:14px;">
+    <div style="display:flex;border-bottom:1px solid rgba(200,134,10,0.22);">
+      <div style="flex:1;text-align:center;padding:12px;color:#E8A020;font-size:13px;font-weight:700;border-bottom:2px solid #E8A020;">☀  Morning Routine</div>
+    </div>
+    <div style="padding:16px;">${renderSteps(result.routinePlan.morning,'am')}</div>
+  </div>
+  <div style="background:#1A0A02;border:1px solid rgba(200,134,10,0.22);border-radius:16px;overflow:hidden;">
+    <div style="display:flex;border-bottom:1px solid rgba(200,134,10,0.22);">
+      <div style="flex:1;text-align:center;padding:12px;color:#7B6DC8;font-size:13px;font-weight:700;border-bottom:2px solid #7B6DC8;">🌙  Night Routine</div>
+    </div>
+    <div style="padding:16px;">${renderSteps(result.routinePlan.night,'pm')}</div>
+  </div>
+</div>
+
+<!-- ── RECOMMENDED PRODUCTS ── -->
+<div class="section">
+  <div class="sec-header"><div class="accent-bar"></div><span class="sec-title">Recommended Products</span><span class="sec-icon">◈</span></div>
+  <div class="sub">Products vetted for melanin-rich skin</div>
+  ${productsHTML}
+</div>
+
+<!-- ── WEEKLY SCHEDULE ── -->
+<div class="section">
+  <div class="sec-header"><div class="accent-bar"></div><span class="sec-title">Weekly Schedule</span><span class="sec-icon">📅</span></div>
+  <div class="sub">Each dot represents one routine step. Today is highlighted.</div>
+  <div style="display:flex;gap:6px;">${weeklyHTML}</div>
+</div>
+
+<!-- ── EXPECTED PROGRESS ── -->
+<div class="section">
+  <div class="sec-header"><div class="accent-bar"></div><span class="sec-title">Expected Progress</span><span class="sec-icon">↑</span></div>
+  <div class="sub">With daily consistency on this routine</div>
+  <div style="padding-left:4px;">${milestonesHTML}</div>
+</div>
+
+<!-- ── DISCLAIMER ── -->
+<div style="background:rgba(224,92,58,0.06);border:1px solid rgba(224,92,58,0.22);border-radius:14px;padding:16px;margin-bottom:24px;">
+  <div style="color:rgba(224,92,58,0.80);font-size:13px;font-weight:800;margin-bottom:8px;">⚕  Medical Disclaimer</div>
+  <div style="color:rgba(245,222,179,0.45);font-size:12px;line-height:1.7;">${result.disclaimer}</div>
+</div>
+
+<!-- ── FOOTER ── -->
+<div style="text-align:center;padding:20px 0 10px;border-top:1px solid rgba(200,134,10,0.15);">
+  <div style="color:#C8860A;font-size:12px;font-weight:800;letter-spacing:3.5px;margin-bottom:4px;">MELANI SCAN</div>
+  <div style="color:rgba(245,222,179,0.35);font-size:11px;margin-bottom:6px;">Built for melanin-rich skin, by design.</div>
+  <div style="color:rgba(200,134,10,0.35);font-size:9px;letter-spacing:1px;">Report ID: ${result.scanId}</div>
+</div>
+
+</div>
+</body>
+</html>`;
+}
+
+// ── PDF share handler ─────────────────────────────────────────
+async function handleSharePDF(result, setSharing) {
+  setSharing(true);
   try {
-    const scoreLabel = result.score>=75?'Excellent':result.score>=55?'Good':'Fair';
-    const conditionNames = result.conditions.map(c=>c.name).join(', ');
-    const message = `🌿 My Melanin Scan Report\n\nSkin Score: ${result.score}/100 (${scoreLabel})\nSkin Type: ${result.skinType}\nConditions: ${conditionNames}\n\nGenerated by Melanin Scan — AI skincare for melanin-rich skin.\nID: ${result.scanId}`;
-    await Share.share({ message, title:'My Melanin Scan Report' });
+    const html = generateReportHTML(result);
+    const { uri } = await Print.printToFileAsync({ html, base64: false });
+    const canShare = await Sharing.isAvailableAsync();
+    if (canShare) {
+      await Sharing.shareAsync(uri, {
+        mimeType: 'application/pdf',
+        dialogTitle: 'Share Your Melani Skin Report',
+        UTI: 'com.adobe.pdf',
+      });
+    } else {
+      Alert.alert('Report Ready', 'PDF has been saved to your device.');
+    }
   } catch (e) {
-    console.log('Share error:', e);
+    console.error('PDF error:', e);
+    Alert.alert('Error', 'Could not generate PDF report. Please try again.');
+  } finally {
+    setSharing(false);
   }
 }
 
@@ -788,6 +1104,7 @@ async function handleShare(result) {
 export default function ScanReportScreen() {
   const navigation = useNavigation();
   const route      = useRoute();
+  const [sharing, setSharing] = useState(false);
 
   // Merge incoming params with default to avoid missing fields
   const result = mergeResultWithDefault(route.params?.result);
@@ -805,10 +1122,17 @@ export default function ScanReportScreen() {
           <TouchableOpacity style={s.navBack} onPress={() => navigation.goBack()}>
             <Text style={s.navBackArrow}>←</Text>
           </TouchableOpacity>
-          <Text style={s.navTitle}>Full Report</Text>
-          <TouchableOpacity style={s.shareBtn} onPress={() => handleShare(result)}>
-            <Text style={s.shareIcon}>↑</Text>
-            <Text style={s.shareLabel}>Share</Text>
+          <Text style={s.navTitle} numberOfLines={1}>Full Report</Text>
+          <TouchableOpacity
+            style={[s.shareBtn, sharing && { opacity: 0.6 }]}
+            onPress={() => handleSharePDF(result, setSharing)}
+            disabled={sharing}
+          >
+            {sharing
+              ? <ActivityIndicator size="small" color={C.gold} />
+              : <Text style={s.shareIcon}>↑</Text>
+            }
+            <Text style={s.shareLabel}>{sharing ? '…' : 'Share'}</Text>
           </TouchableOpacity>
         </FadeSlide>
 
@@ -904,7 +1228,8 @@ export default function ScanReportScreen() {
           <GoldButton
             label="Share Report"
             icon="↑"
-            onPress={() => handleShare(result)}
+            onPress={() => handleSharePDF(result, setSharing)}
+            loading={sharing}
             style={{ marginBottom:12 }}
           />
           <TouchableOpacity
@@ -929,15 +1254,15 @@ export default function ScanReportScreen() {
 }
 
 const s = StyleSheet.create({
-  scroll: { paddingTop:56, paddingHorizontal:22 },
+  scroll: { paddingTop:64, paddingHorizontal:22 },
 
-  nav:        { flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:24 },
-  navBack:    { width:42,height:42,borderRadius:12,backgroundColor:C.bgCard,borderWidth:1,borderColor:C.border,alignItems:'center',justifyContent:'center' },
+  nav:         { flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:24 },
+  navBack:     { width:42,height:42,borderRadius:12,backgroundColor:C.bgCard,borderWidth:1,borderColor:C.border,alignItems:'center',justifyContent:'center',flexShrink:0 },
   navBackArrow:{ color:C.cream,fontSize:18 },
-  navTitle:   { color:C.cream,fontSize:18,fontWeight:'800' },
-  shareBtn:   { flexDirection:'row',alignItems:'center',gap:5,backgroundColor:C.goldPale,borderWidth:1,borderColor:C.border,borderRadius:10,paddingHorizontal:14,paddingVertical:8 },
-  shareIcon:  { color:C.gold,fontSize:14,fontWeight:'800' },
-  shareLabel: { color:C.gold,fontSize:12,fontWeight:'700' },
+  navTitle:    { flex:1,color:C.cream,fontSize:18,fontWeight:'800',textAlign:'center',paddingHorizontal:8 },
+  shareBtn:    { flexDirection:'row',alignItems:'center',gap:5,backgroundColor:C.goldPale,borderWidth:1,borderColor:C.border,borderRadius:10,paddingHorizontal:14,paddingVertical:8,flexShrink:0 },
+  shareIcon:   { color:C.gold,fontSize:14,fontWeight:'800' },
+  shareLabel:  { color:C.gold,fontSize:12,fontWeight:'700' },
 
   insightBox:       { backgroundColor:C.bgCard,borderWidth:1,borderColor:C.border,borderRadius:16,padding:16 },
   insightRow:       { flexDirection:'row',gap:24,marginBottom:0 },
