@@ -1082,7 +1082,7 @@ export default function ScanResultsScreen() {
         <FadeSlide delay={0} style={s.header}>
           <TouchableOpacity
             style={s.backBtn}
-            onPress={() => navigation.goBack()}
+            onPress={() => navigation.navigate('Main')}
           >
             <Text style={s.backArrow}>←</Text>
           </TouchableOpacity>
@@ -1189,7 +1189,7 @@ export default function ScanResultsScreen() {
           ) : (
             <TouchableOpacity
               style={s.secondaryBtn}
-              onPress={() => navigation.navigate("Routine")}
+              onPress={() => navigation.navigate("Main", { screen: "Routine" })}
             >
               <Text style={s.secondaryBtnText}>Go to My Routine →</Text>
             </TouchableOpacity>

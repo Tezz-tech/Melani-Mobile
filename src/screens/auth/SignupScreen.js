@@ -522,10 +522,9 @@ export default function SignupScreen() {
     try {
       await register({ firstName, lastName, email, phone, password });
 
-      // ✅ register() now dispatches REGISTER_SUCCESS which sets pendingUser
-      // but does NOT flip isAuthenticated — the unauthenticated stack stays
-      // mounted so this navigate fires correctly every time.
-      navigation.navigate('Onboarding');
+      // Navigate to OTP verification screen so the user can verify their email.
+      // The email + registered flag are passed so OTPVerifyScreen knows the context.
+      navigation.navigate('OTPVerify', { email: email.trim().toLowerCase(), context: 'signup' });
     } catch (err) {
       const msg = (err.message || "").toLowerCase();
       const code = err.statusCode ?? err.status ?? err.response?.status;
@@ -654,19 +653,7 @@ export default function SignupScreen() {
             />
           </View>
 
-          <FadeSlide delay={510} style={{ marginBottom: 20 }}>
-            <Text style={s.terms}>
-              By continuing, you agree to our{" "}
-              <Text style={{ color: C.gold, fontWeight: "600" }}>
-                Terms of Service
-              </Text>{" "}
-              and{" "}
-              <Text style={{ color: C.gold, fontWeight: "600" }}>
-                Privacy Policy
-              </Text>
-              .
-            </Text>
-          </FadeSlide>
+         
 
           <FadeSlide delay={570}>
             <GoldButton

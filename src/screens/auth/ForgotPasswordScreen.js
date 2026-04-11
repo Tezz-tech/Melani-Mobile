@@ -48,10 +48,15 @@ function FadeSlide({ delay = 0, children, style }) {
 
 export default function ForgotPasswordScreen() {
   const navigation = useNavigation();
-  const [email,    setEmail]    = useState('');
-  const [loading,  setLoading]  = useState(false);
-  const [sent,     setSent]     = useState(false);
-  const [error,    setError]    = useState('');
+
+  // step: 'email' → 'otp' → 'password'
+  const [step,        setStep]        = useState('email');
+  const [email,       setEmail]       = useState('');
+  const [otp,         setOtp]         = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [showPass,    setShowPass]    = useState(false);
+  const [loading,     setLoading]     = useState(false);
+  const [error,       setError]       = useState('');
 
   const handleSend = async () => {
     if (!email.trim()) { setError('Please enter your email address.'); return; }
@@ -60,9 +65,44 @@ export default function ForgotPasswordScreen() {
     setError('');
     try {
       await AuthAPI.forgotPassword(email.trim().toLowerCase());
-      setSent(true);
+      setStep('otp');
     } catch (e) {
-      setError(e?.message || 'Failed to send reset email. Please try again.');
+      setError(e?.message || 'Failed to send reset code. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOTP = async () => {
+    if (otp.length < 6) { setError('Please enter the 6-digit code from your email.'); return; }
+    setLoading(true);
+    setError('');
+    try {
+      // We don't verify the OTP separately — we'll validate it along with the new password.
+      // Just move to the next step.
+      setStep('password');
+    } catch (e) {
+      setError(e?.message || 'Invalid code. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (newPassword.length < 8) { setError('Password must be at least 8 characters.'); return; }
+    setLoading(true);
+    setError('');
+    try {
+      await AuthAPI.resetPasswordWithOTP(email.trim().toLowerCase(), otp.trim(), newPassword);
+      // Success — tokens are updated, navigate to main
+      navigation.navigate('Login');
+    } catch (e) {
+      setError(e?.message || 'Failed to reset password. Please try again.');
+      // If OTP was wrong/expired, go back to OTP step
+      if (e?.message?.toLowerCase().includes('code') || e?.message?.toLowerCase().includes('otp')) {
+        setStep('otp');
+        setOtp('');
+      }
     } finally {
       setLoading(false);
     }
@@ -76,9 +116,10 @@ export default function ForgotPasswordScreen() {
 
           {/* Back */}
           <FadeSlide delay={0}>
-            <TouchableOpacity style={s.back} onPress={() => navigation.goBack()}>
+            <TouchableOpacity style={s.back}
+              onPress={() => step === 'email' ? navigation.goBack() : setStep(step === 'password' ? 'otp' : 'email')}>
               <Text style={s.backArrow}>←</Text>
-              <Text style={s.backLabel}>Back to Login</Text>
+              <Text style={s.backLabel}>{step === 'email' ? 'Back to Login' : 'Go Back'}</Text>
             </TouchableOpacity>
           </FadeSlide>
 
@@ -89,12 +130,13 @@ export default function ForgotPasswordScreen() {
             </View>
           </FadeSlide>
 
-          {!sent ? (
+          {/* ── STEP 1: Enter email ── */}
+          {step === 'email' && (
             <>
               <FadeSlide delay={160} style={s.headWrap}>
                 <Text style={s.title}>Forgot Password?</Text>
                 <Text style={s.subtitle}>
-                  Enter your email and we'll send you a link to reset your password.
+                  Enter your email and we'll send a 6-digit reset code.
                 </Text>
               </FadeSlide>
 
@@ -112,54 +154,87 @@ export default function ForgotPasswordScreen() {
                   returnKeyType="send"
                   onSubmitEditing={handleSend}
                 />
-
-                {!!error && (
-                  <View style={s.errorBox}>
-                    <Text style={s.errorText}>⚠  {error}</Text>
-                  </View>
-                )}
-
-                <TouchableOpacity
-                  style={[s.cta, loading && { opacity: 0.7 }]}
-                  onPress={handleSend}
-                  disabled={loading}
-                  activeOpacity={0.85}
-                >
+                {!!error && <View style={s.errorBox}><Text style={s.errorText}>⚠  {error}</Text></View>}
+                <TouchableOpacity style={[s.cta, loading && { opacity: 0.7 }]} onPress={handleSend} disabled={loading} activeOpacity={0.85}>
                   <View style={s.ctaShimmer} />
-                  {loading
-                    ? <ActivityIndicator size="small" color="#0F0500" />
-                    : <Text style={s.ctaLabel}>Send Reset Link</Text>
-                  }
+                  {loading ? <ActivityIndicator size="small" color="#0F0500" /> : <Text style={s.ctaLabel}>Send Reset Code</Text>}
                 </TouchableOpacity>
               </FadeSlide>
             </>
-          ) : (
-            <FadeSlide delay={0} style={s.successWrap}>
-              <View style={s.successIcon}>
-                <Text style={{ fontSize: 36 }}>✉</Text>
-              </View>
-              <Text style={s.successTitle}>Check your inbox</Text>
-              <Text style={s.successBody}>
-                We've sent a password reset link to{'\n'}
-                <Text style={{ color: C.gold, fontWeight: '700' }}>{email}</Text>
-                {'\n\n'}
-                If it doesn't arrive within a few minutes, check your spam folder.
-              </Text>
-              <TouchableOpacity
-                style={s.cta}
-                onPress={() => navigation.navigate('Login')}
-                activeOpacity={0.85}
-              >
-                <View style={s.ctaShimmer} />
-                <Text style={s.ctaLabel}>Back to Login</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={{ marginTop: 14 }}
-                onPress={() => { setSent(false); setEmail(''); }}
-              >
-                <Text style={{ color: C.creamDim, fontSize: 13 }}>Try a different email</Text>
-              </TouchableOpacity>
-            </FadeSlide>
+          )}
+
+          {/* ── STEP 2: Enter OTP ── */}
+          {step === 'otp' && (
+            <>
+              <FadeSlide delay={0} style={s.headWrap}>
+                <Text style={s.title}>Check Your Email</Text>
+                <Text style={s.subtitle}>
+                  We sent a 6-digit code to{'\n'}
+                  <Text style={{ color: C.gold, fontWeight: '700' }}>{email}</Text>
+                  {'\n'}Check your inbox and spam folder.
+                </Text>
+              </FadeSlide>
+
+              <FadeSlide delay={120} style={s.form}>
+                <Text style={s.label}>6-Digit Reset Code</Text>
+                <TextInput
+                  style={[s.input, s.otpInput, error && s.inputError]}
+                  value={otp}
+                  onChangeText={v => { setOtp(v.replace(/\D/g, '').slice(0, 6)); setError(''); }}
+                  placeholder="• • • • • •"
+                  placeholderTextColor={C.creamFaint}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  returnKeyType="next"
+                  onSubmitEditing={handleVerifyOTP}
+                />
+                {!!error && <View style={s.errorBox}><Text style={s.errorText}>⚠  {error}</Text></View>}
+                <TouchableOpacity style={[s.cta, (loading || otp.length < 6) && { opacity: 0.7 }]} onPress={handleVerifyOTP} disabled={loading || otp.length < 6} activeOpacity={0.85}>
+                  <View style={s.ctaShimmer} />
+                  {loading ? <ActivityIndicator size="small" color="#0F0500" /> : <Text style={s.ctaLabel}>Continue →</Text>}
+                </TouchableOpacity>
+                <TouchableOpacity style={{ marginTop: 16, alignItems: 'center' }} onPress={handleSend}>
+                  <Text style={{ color: C.creamDim, fontSize: 13, textDecorationLine: 'underline' }}>Resend code</Text>
+                </TouchableOpacity>
+              </FadeSlide>
+            </>
+          )}
+
+          {/* ── STEP 3: Set new password ── */}
+          {step === 'password' && (
+            <>
+              <FadeSlide delay={0} style={s.headWrap}>
+                <Text style={s.title}>Set New Password</Text>
+                <Text style={s.subtitle}>
+                  Choose a strong password for your account.
+                </Text>
+              </FadeSlide>
+
+              <FadeSlide delay={120} style={s.form}>
+                <Text style={s.label}>New Password</Text>
+                <View style={s.passWrap}>
+                  <TextInput
+                    style={[s.input, s.passInput, error && s.inputError]}
+                    value={newPassword}
+                    onChangeText={v => { setNewPassword(v); setError(''); }}
+                    placeholder="Minimum 8 characters"
+                    placeholderTextColor={C.creamFaint}
+                    secureTextEntry={!showPass}
+                    autoCapitalize="none"
+                    returnKeyType="done"
+                    onSubmitEditing={handleResetPassword}
+                  />
+                  <TouchableOpacity style={s.eyeBtn} onPress={() => setShowPass(p => !p)}>
+                    <Text style={{ color: C.creamDim, fontSize: 13 }}>{showPass ? '○' : '●'}</Text>
+                  </TouchableOpacity>
+                </View>
+                {!!error && <View style={s.errorBox}><Text style={s.errorText}>⚠  {error}</Text></View>}
+                <TouchableOpacity style={[s.cta, loading && { opacity: 0.7 }]} onPress={handleResetPassword} disabled={loading} activeOpacity={0.85}>
+                  <View style={s.ctaShimmer} />
+                  {loading ? <ActivityIndicator size="small" color="#0F0500" /> : <Text style={s.ctaLabel}>Reset Password</Text>}
+                </TouchableOpacity>
+              </FadeSlide>
+            </>
           )}
 
         </ScrollView>
@@ -188,8 +263,8 @@ const s = StyleSheet.create({
   cta:          { backgroundColor: C.gold, borderRadius: 14, paddingVertical: 17, alignItems: 'center', overflow: 'hidden', shadowColor: C.gold, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.45, shadowRadius: 16, elevation: 10 },
   ctaShimmer:   { position: 'absolute', top: 0, left: 0, right: 0, height: '55%', backgroundColor: 'rgba(255,255,255,0.10)', borderRadius: 14 },
   ctaLabel:     { color: '#0F0500', fontSize: 16, fontWeight: '800', letterSpacing: 1 },
-  successWrap:  { alignItems: 'center', paddingTop: 20 },
-  successIcon:  { width: 90, height: 90, borderRadius: 45, backgroundColor: C.goldPale, borderWidth: 2, borderColor: C.gold, alignItems: 'center', justifyContent: 'center', marginBottom: 24, shadowColor: C.gold, shadowOpacity: 0.35, shadowRadius: 16, elevation: 8 },
-  successTitle: { color: C.cream, fontSize: 24, fontWeight: '800', marginBottom: 14, textAlign: 'center' },
-  successBody:  { color: C.creamDim, fontSize: 14, lineHeight: 22, textAlign: 'center', marginBottom: 32, paddingHorizontal: 8 },
+  otpInput:  { textAlign: 'center', fontSize: 24, fontWeight: '800', letterSpacing: 10, color: C.gold },
+  passWrap:  { position: 'relative' },
+  passInput: { paddingRight: 48 },
+  eyeBtn:    { position: 'absolute', right: 16, top: 0, bottom: 0, justifyContent: 'center' },
 });

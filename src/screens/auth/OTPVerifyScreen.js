@@ -224,13 +224,14 @@ function FingerprintMotif() {
 export default function OTPVerifyScreen() {
   const navigation = useNavigation();
   const route      = useRoute();
-  const { phone = '', context = 'signup' } = route.params || {};
+  // context: 'signup' (email verification) | 'reset' (password reset OTP)
+  const { email = '', context = 'signup' } = route.params || {};
 
   const [otp,         setOtp]         = useState(Array(OTP_LENGTH).fill(''));
   const [activeIndex, setActiveIndex] = useState(0);
   const [error,       setError]       = useState('');
   const [loading,     setLoading]     = useState(false);
-  const [countdown,   setCountdown]   = useState(30);
+  const [countdown,   setCountdown]   = useState(60);
   const [canResend,   setCanResend]   = useState(false);
 
   const inputRef  = useRef(null);
@@ -269,13 +270,13 @@ export default function OTPVerifyScreen() {
       Keyboard.dismiss();
       verifyCode(digits);
     }
-  }, [phone, context]);
+  }, [email, context]);
 
   // ── Verify OTP via API ────────────────────────────────────
   const verifyCode = async (code) => {
     const finalCode = code || otp.join('');
     if (finalCode.length < OTP_LENGTH) {
-      setError('Please enter the complete 6-digit code');
+      setError('Please enter the complete 6-digit code.');
       shake();
       return;
     }
@@ -284,21 +285,13 @@ export default function OTPVerifyScreen() {
     setError('');
 
     try {
-      // ── REAL API CALL ──
-      // The backend endpoint depends on your implementation.
-      // If phone OTP verification is a separate endpoint, call it here.
-      // For now we call a generic verify endpoint:
-      //   POST /api/auth/verify-otp  { phone, code }
-      // If your backend doesn't have this yet, replace with your actual endpoint.
-      await AuthAPI.request('POST', '/auth/verify-otp', { phone, code: finalCode });
-
-      // OTP verified — move to next step
-      navigation.navigate(context === 'signup' ? 'Onboarding' : 'Main');
+      await AuthAPI.verifyEmailOTP(email, finalCode);
+      // Success — go to onboarding for signup, or back to login for reset
+      navigation.navigate(context === 'signup' ? 'Onboarding' : 'Login');
     } catch (err) {
       const msg = err.message || 'Invalid code. Please try again.';
       setError(msg);
       shake();
-      // Clear boxes so user can re-enter
       setOtp(Array(OTP_LENGTH).fill(''));
       setActiveIndex(0);
       inputRef.current?.focus();
@@ -314,22 +307,21 @@ export default function OTPVerifyScreen() {
     setOtp(Array(OTP_LENGTH).fill(''));
     setActiveIndex(0);
     setError('');
-    setCountdown(30);
+    setCountdown(60);
     setCanResend(false);
     inputRef.current?.focus();
 
     try {
-      // ── REAL API CALL ──
-      // POST /api/auth/resend-otp  { phone }
-      await AuthAPI.request('POST', '/auth/resend-otp', { phone });
+      await AuthAPI.sendVerificationOTP(email);
     } catch (err) {
       setError(err.message || 'Failed to resend code. Please try again.');
     }
   };
 
-  const maskedPhone = phone
-    ? phone.slice(0, -4).replace(/./g, '•') + phone.slice(-4)
-    : '••••••••';
+  // Mask email: j***@gmail.com
+  const maskedEmail = email
+    ? email.replace(/^(.{1,2})(.*)(@.*)$/, (_, a, b, c) => a + b.replace(/./g, '•') + c)
+    : '•••@•••';
 
   return (
     <AfricanBG>
@@ -343,10 +335,10 @@ export default function OTPVerifyScreen() {
           <View style={s.logoRing}>
             <Text style={s.logoLetter}>M</Text>
           </View>
-          <Text style={s.title}>Verify Your Number</Text>
+          <Text style={s.title}>Verify Your Email</Text>
           <Text style={s.subtitle}>
             We sent a 6-digit code to{'\n'}
-            <Text style={{ color: C.cream, fontWeight: '700' }}>{maskedPhone}</Text>
+            <Text style={{ color: C.cream, fontWeight: '700' }}>{maskedEmail}</Text>
           </Text>
         </FadeSlide>
 
@@ -397,11 +389,11 @@ export default function OTPVerifyScreen() {
           <GoldButton label="Verify & Continue" onPress={() => verifyCode()} loading={loading} />
         </FadeSlide>
 
-        {/* Change number */}
+        {/* Wrong email? Go back */}
         <FadeSlide delay={580} style={{ marginBottom: 36 }}>
           <TouchableOpacity onPress={() => navigation.goBack()}>
             <Text style={{ color: C.creamDim, fontSize: 13, fontWeight: '500', textDecorationLine: 'underline' }}>
-              Change phone number
+              Wrong email? Go back
             </Text>
           </TouchableOpacity>
         </FadeSlide>

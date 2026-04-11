@@ -2,9 +2,11 @@
 import React, { useRef, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Animated,
-  StatusBar, ScrollView, Switch, Dimensions,
+  StatusBar, ScrollView, Switch, Dimensions, Alert, Linking,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from '../../store/AuthContext';
 
 const { width: W, height: H } = Dimensions.get('window');
 
@@ -196,25 +198,71 @@ const sel = StyleSheet.create({
 // ── Screen ────────────────────────────────────────────────────
 export default function SettingsScreen() {
   const navigation = useNavigation();
+  const { logout } = useAuth();
 
   const [settings, setSettings] = useState({
-    darkMode:       true,
     hapticFeedback: true,
     faceDetection:  true,
     autoSave:       true,
     analytics:      true,
     crashReports:   true,
     betaFeatures:   false,
-    offlineMode:    false,
-    highQualityScan:true,
   });
 
-  const [language,   setLanguage]   = useState('English');
-  const [currency,   setCurrency]   = useState('₦ NGN');
+  const [language,    setLanguage]    = useState('English');
+  const [currency,    setCurrency]    = useState('₦ NGN');
   const [scanQuality, setScanQuality] = useState('High Quality');
   const [cameraMode,  setCameraMode]  = useState('Front Camera');
 
   const toggle = (key) => setSettings(prev => ({ ...prev, [key]: !prev[key] }));
+
+  const handleSignOut = () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await logout();
+            } catch {
+              // Even if the API call fails, logout() clears tokens locally
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleClearCache = () => {
+    Alert.alert(
+      'Clear Cache',
+      'This will clear locally cached data. Your account and scan history are safe.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Clear all non-token keys from AsyncStorage
+              const allKeys = await AsyncStorage.getAllKeys();
+              const safeKeys = allKeys.filter(k =>
+                !k.includes('accessToken') && !k.includes('refreshToken') && !k.includes('user')
+              );
+              if (safeKeys.length > 0) await AsyncStorage.multiRemove(safeKeys);
+              Alert.alert('Done', 'Cache cleared successfully.');
+            } catch {
+              Alert.alert('Error', 'Could not clear cache. Please try again.');
+            }
+          },
+        },
+      ],
+    );
+  };
 
   return (
     <AfricanBG>
@@ -231,66 +279,78 @@ export default function SettingsScreen() {
 
         {/* ── Account ── */}
         <SectionLabel text="Account" delay={80} />
-        <NavRow icon="◉" label="Edit Profile"      sublabel="Name, email, phone"                           onPress={()=>{}}                                  delay={110} />
-        <NavRow icon="💎" label="Subscription"      sublabel="Pro Plan · Renews Dec 1" badge="PRO" badgeColor={C.gold} onPress={()=>navigation.navigate('Subscription')} delay={160} />
-        <NavRow icon="🔒" label="Security"          sublabel="Password, biometrics, 2FA"                   onPress={()=>{}}                                  delay={210} />
-        <NavRow icon="🔔" label="Notifications"     sublabel="Reminders, alerts, marketing"                onPress={()=>navigation.navigate('Notifications')} delay={260} />
+        <NavRow icon="◉" label="Edit Profile"  sublabel="View and update your profile"
+          onPress={()=>navigation.navigate('Profile')} delay={110} />
+        <NavRow icon="💎" label="Subscription" sublabel="Manage your plan"
+          badge="PLAN" badgeColor={C.gold}
+          onPress={()=>navigation.navigate('Subscription')} delay={160} />
+        <NavRow icon="🔔" label="Notifications" sublabel="Reminders, alerts, marketing"
+          onPress={()=>navigation.navigate('Notifications')} delay={210} />
 
         {/* ── App Preferences ── */}
-        <SectionLabel text="App Preferences" delay={300} />
-        <ToggleRow icon="🌙" label="Dark Mode"          sublabel="Optimised for night viewing"    value={settings.darkMode}       onToggle={()=>toggle('darkMode')}       delay={330} />
-        <ToggleRow icon="📳" label="Haptic Feedback"    sublabel="Vibration on interactions"      value={settings.hapticFeedback} onToggle={()=>toggle('hapticFeedback')} delay={370} />
-        <SelectorRow icon="🌍" label="Language"     value={language}   options={['English','Pidgin English','Yoruba','Igbo','Hausa']} onSelect={setLanguage}  delay={410} />
-        <SelectorRow icon="💰" label="Currency"     value={currency}   options={['₦ NGN','$ USD','£ GBP','€ EUR']}                  onSelect={setCurrency}  delay={450} />
+        <SectionLabel text="App Preferences" delay={260} />
+        <ToggleRow icon="📳" label="Haptic Feedback" sublabel="Vibration on interactions"
+          value={settings.hapticFeedback} onToggle={()=>toggle('hapticFeedback')} delay={290} />
+        <SelectorRow icon="🌍" label="Language" value={language}
+          options={['English','Pidgin English','Yoruba','Igbo','Hausa']}
+          onSelect={setLanguage} delay={330} />
+        <SelectorRow icon="💰" label="Currency" value={currency}
+          options={['₦ NGN','$ USD','£ GBP','€ EUR']}
+          onSelect={setCurrency} delay={370} />
 
         {/* ── Scan Settings ── */}
-        <SectionLabel text="Scan Settings" delay={490} />
-        <SelectorRow icon="◉" label="Camera"        value={cameraMode}  options={['Front Camera','Rear Camera']}                    onSelect={setCameraMode}  delay={520} />
-        <SelectorRow icon="✦" label="Scan Quality"  value={scanQuality} options={['High Quality','Balanced','Battery Saver']}       onSelect={setScanQuality} delay={560} />
-        <ToggleRow icon="◎" label="Face Detection Guide" sublabel="Show face alignment overlay" value={settings.faceDetection} onToggle={()=>toggle('faceDetection')} delay={600} />
-        <ToggleRow icon="💾" label="Auto-Save Scans"     sublabel="Save all results to history" value={settings.autoSave}       onToggle={()=>toggle('autoSave')}       delay={640} />
+        <SectionLabel text="Scan Settings" delay={410} />
+        <SelectorRow icon="◉" label="Camera" value={cameraMode}
+          options={['Front Camera','Rear Camera']}
+          onSelect={setCameraMode} delay={440} />
+        <SelectorRow icon="✦" label="Scan Quality" value={scanQuality}
+          options={['High Quality','Balanced','Battery Saver']}
+          onSelect={setScanQuality} delay={480} />
+        <ToggleRow icon="◎" label="Face Detection Guide" sublabel="Show face alignment overlay"
+          value={settings.faceDetection} onToggle={()=>toggle('faceDetection')} delay={520} />
+        <ToggleRow icon="💾" label="Auto-Save Scans" sublabel="Save all results to history"
+          value={settings.autoSave} onToggle={()=>toggle('autoSave')} delay={560} />
 
         {/* ── Privacy & Data ── */}
-        <SectionLabel text="Privacy & Data" delay={680} />
-        <NavRow icon="🛡" label="Privacy Settings"  sublabel="Data usage, camera permissions"  onPress={()=>navigation.navigate('Privacy')}      delay={710} />
-        <ToggleRow icon="📊" label="Analytics"       sublabel="Help us improve the app"        value={settings.analytics}   onToggle={()=>toggle('analytics')}   delay={750} />
-        <ToggleRow icon="🐛" label="Crash Reports"   sublabel="Automatically send error logs"  value={settings.crashReports}onToggle={()=>toggle('crashReports')} delay={790} />
-
-        {/* ── Advanced ── */}
-        <SectionLabel text="Advanced" delay={830} />
-        <ToggleRow icon="🧪" label="Beta Features"   sublabel="Early access to new tools"       value={settings.betaFeatures} onToggle={()=>toggle('betaFeatures')} delay={860} />
-        <ToggleRow icon="📴" label="Offline Mode"    sublabel="Cache data for offline access"   value={settings.offlineMode}  onToggle={()=>toggle('offlineMode')}  delay={900} />
-        <NavRow icon="🗑" label="Clear Cache"        sublabel="Free up storage space"           onPress={()=>{}}                                                   delay={940} />
-        <NavRow icon="↓"  label="Export My Data"    sublabel="Download all your scan data"      onPress={()=>{}}                                                   delay={980} />
+        <SectionLabel text="Privacy & Data" delay={600} />
+        <NavRow icon="🛡" label="Privacy Settings" sublabel="Data usage, camera permissions"
+          onPress={()=>navigation.navigate('Privacy')} delay={630} />
+        <ToggleRow icon="📊" label="Analytics" sublabel="Help us improve the app"
+          value={settings.analytics} onToggle={()=>toggle('analytics')} delay={670} />
+        <ToggleRow icon="🐛" label="Crash Reports" sublabel="Automatically send error logs"
+          value={settings.crashReports} onToggle={()=>toggle('crashReports')} delay={710} />
+        <NavRow icon="🗑" label="Clear Cache" sublabel="Free up local storage space"
+          onPress={handleClearCache} delay={750} />
 
         {/* ── Support ── */}
-        <SectionLabel text="Support" delay={1020} />
-        <NavRow icon="◎" label="Help & FAQ"         sublabel="Get help using the app"           onPress={()=>navigation.navigate('Help')}          delay={1050} />
-        <NavRow icon="✉" label="Contact Support"    sublabel="support@melaninscan.com"          onPress={()=>{}}                                                   delay={1090} />
-        <NavRow icon="⭐" label="Rate the App"      sublabel="Leave a review on the App Store"  onPress={()=>{}}                                                   delay={1130} />
+        <SectionLabel text="Support" delay={790} />
+        <NavRow icon="◎" label="Help & FAQ" sublabel="Get help using the app"
+          onPress={()=>navigation.navigate('Help')} delay={820} />
+        <NavRow icon="✉" label="Contact Support" sublabel="support@melaniscan.ng"
+          onPress={()=>Linking.openURL('mailto:support@melaniscan.ng')} delay={860} />
 
         {/* ── About ── */}
-        <SectionLabel text="About" delay={1170} />
-        <FadeSlide delay={1200} style={s.aboutCard}>
+        <SectionLabel text="About" delay={900} />
+        <FadeSlide delay={930} style={s.aboutCard}>
           <View style={s.aboutRow}>
-            <View style={s.aboutLogoMark}><Text style={{ color:C.gold,fontSize:14,fontWeight:'900' }}>M</Text></View>
+            <View style={s.aboutLogoMark}>
+              <Text style={{ color:C.gold,fontSize:14,fontWeight:'900' }}>M</Text>
+            </View>
             <View>
               <Text style={s.aboutName}>Melani Scan</Text>
               <Text style={s.aboutVersion}>Version 1.0.0  ·  Build 100</Text>
             </View>
           </View>
           <Text style={s.aboutTagline}>Built for melanin-rich skin, by design.</Text>
-          <View style={s.aboutLinks}>
-            {['Terms of Service','Privacy Policy','Licenses'].map((l,i)=>(
-              <TouchableOpacity key={i}><Text style={s.aboutLink}>{l}</Text></TouchableOpacity>
-            ))}
-          </View>
         </FadeSlide>
 
         {/* Danger zone */}
-        <SectionLabel text="Danger Zone" delay={1260} />
-        <NavRow icon="↩" label="Sign Out"           danger onPress={()=>navigation.reset({index:0,routes:[{name:'Welcome'}]})} delay={1290} />
-        <NavRow icon="✕" label="Delete Account"     danger sublabel="Permanently remove all data"   onPress={()=>navigation.navigate('DeleteAccount')} delay={1330} />
+        <SectionLabel text="Danger Zone" delay={980} />
+        <NavRow icon="↩" label="Sign Out" danger
+          onPress={handleSignOut} delay={1010} />
+        <NavRow icon="✕" label="Delete Account" danger
+          sublabel="Permanently remove all data"
+          onPress={()=>navigation.navigate('DeleteAccount')} delay={1050} />
 
         <View style={{ height:80 }}/>
       </ScrollView>
@@ -309,7 +369,5 @@ const s = StyleSheet.create({
   aboutLogoMark:{ width:38,height:38,borderRadius:10,backgroundColor:C.goldPale,borderWidth:1,borderColor:C.border,alignItems:'center',justifyContent:'center' },
   aboutName:    { color:C.cream,fontSize:15,fontWeight:'800',marginBottom:2 },
   aboutVersion: { color:C.creamDim,fontSize:11 },
-  aboutTagline: { color:C.creamFaint,fontSize:12,marginBottom:12,fontStyle:'italic' },
-  aboutLinks:   { flexDirection:'row',gap:16 },
-  aboutLink:    { color:C.gold,fontSize:11,fontWeight:'600',textDecorationLine:'underline' },
+  aboutTagline: { color:C.creamFaint,fontSize:12,fontStyle:'italic' },
 });

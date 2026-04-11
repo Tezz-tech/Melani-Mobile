@@ -15,7 +15,6 @@ import {
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "../../store/AuthContext";
-import { AuthAPI } from "../../services/api";
 
 const { width: W, height: H } = Dimensions.get("window");
 
@@ -456,210 +455,6 @@ const fld = StyleSheet.create({
   },
 });
 
-// ── Forgot password bottom sheet ──────────────────────────────
-function ForgotPasswordSheet({ visible, onClose }) {
-  const [fpEmail, setFpEmail] = useState("");
-  const [fpLoading, setFpLoading] = useState(false);
-  const [fpSent, setFpSent] = useState(false);
-  const [fpError, setFpError] = useState("");
-
-  const translateY = useRef(new Animated.Value(400)).current;
-
-  useEffect(() => {
-    Animated.spring(translateY, {
-      toValue: visible ? 0 : 400,
-      friction: 8,
-      tension: 60,
-      useNativeDriver: true,
-    }).start();
-    if (!visible) {
-      setFpEmail("");
-      setFpSent(false);
-      setFpError("");
-    }
-  }, [visible]);
-
-  const handleSend = async () => {
-    if (!fpEmail.includes("@")) {
-      setFpError("Enter a valid email address");
-      return;
-    }
-    setFpLoading(true);
-    setFpError("");
-    try {
-      await AuthAPI.forgotPassword(fpEmail);
-      setFpSent(true);
-    } catch (err) {
-      setFpError(err.message || "Failed to send. Please try again.");
-    } finally {
-      setFpLoading(false);
-    }
-  };
-
-  if (!visible) return null;
-
-  return (
-    <View style={fp.overlay}>
-      <TouchableOpacity
-        style={{ flex: 1 }}
-        onPress={onClose}
-        activeOpacity={1}
-      />
-      <Animated.View style={[fp.sheet, { transform: [{ translateY }] }]}>
-        <View style={fp.handle} />
-        <Text style={fp.title}>Reset Password</Text>
-
-        {fpSent ? (
-          <>
-            <View style={fp.successBox}>
-              <Text style={fp.successIcon}>✓</Text>
-              <Text style={fp.successText}>
-                Check your inbox. We sent reset instructions to{"\n"}
-                <Text style={{ fontWeight: "700", color: C.cream }}>
-                  {fpEmail}
-                </Text>
-              </Text>
-            </View>
-            <TouchableOpacity style={fp.doneBtn} onPress={onClose}>
-              <Text style={fp.doneBtnText}>Done</Text>
-            </TouchableOpacity>
-          </>
-        ) : (
-          <>
-            <Text style={fp.subtitle}>
-              Enter the email address linked to your account.
-            </Text>
-            <View
-              style={[
-                fld.container,
-                { borderColor: fpError ? C.error : C.border, marginBottom: 8 },
-              ]}
-            >
-              <Text style={[fld.label, { color: C.creamDim }]}>
-                Email Address
-              </Text>
-              <TextInput
-                style={fld.input}
-                placeholder="your@email.com"
-                placeholderTextColor={C.creamFaint}
-                value={fpEmail}
-                onChangeText={(t) => {
-                  setFpEmail(t);
-                  setFpError("");
-                }}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </View>
-            {fpError ? (
-              <Text
-                style={{
-                  color: C.error,
-                  fontSize: 12,
-                  marginBottom: 10,
-                  marginLeft: 4,
-                }}
-              >
-                {fpError}
-              </Text>
-            ) : null}
-            <TouchableOpacity
-              style={[fp.sendBtn, fpLoading && { opacity: 0.65 }]}
-              onPress={handleSend}
-              disabled={fpLoading}
-            >
-              {fpLoading ? (
-                <LoadingDots />
-              ) : (
-                <Text style={fp.sendBtnText}>Send Reset Email</Text>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={{ alignItems: "center", marginTop: 14 }}
-              onPress={onClose}
-            >
-              <Text style={{ color: C.creamDim, fontSize: 13 }}>Cancel</Text>
-            </TouchableOpacity>
-          </>
-        )}
-      </Animated.View>
-    </View>
-  );
-}
-const fp = StyleSheet.create({
-  overlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.65)",
-  },
-  sheet: {
-    backgroundColor: "#1A0A02",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 28,
-    paddingBottom: 44,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(200,134,10,0.25)",
-  },
-  handle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: "rgba(200,134,10,0.35)",
-    alignSelf: "center",
-    marginBottom: 22,
-  },
-  title: { color: C.cream, fontSize: 22, fontWeight: "800", marginBottom: 8 },
-  subtitle: {
-    color: C.creamDim,
-    fontSize: 13,
-    lineHeight: 20,
-    marginBottom: 20,
-  },
-  sendBtn: {
-    backgroundColor: C.gold,
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: "center",
-    shadowColor: C.gold,
-    shadowOpacity: 0.4,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  sendBtnText: {
-    color: "#0F0500",
-    fontSize: 15,
-    fontWeight: "800",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
-  successBox: {
-    backgroundColor: "rgba(93,190,138,0.10)",
-    borderWidth: 1,
-    borderColor: "rgba(93,190,138,0.30)",
-    borderRadius: 14,
-    padding: 16,
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
-    marginBottom: 22,
-  },
-  successIcon: { color: "#5DBE8A", fontSize: 22, fontWeight: "900" },
-  successText: { color: C.creamDim, fontSize: 13, lineHeight: 20, flex: 1 },
-  doneBtn: {
-    backgroundColor: C.gold,
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: "center",
-  },
-  doneBtnText: { color: "#0F0500", fontSize: 15, fontWeight: "800" },
-});
-
 // ── General error banner ──────────────────────────────────────
 function ErrorBanner({ message }) {
   if (!message) return null;
@@ -711,7 +506,6 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
-  const [showForgot, setShowForgot] = useState(false);
 
   // Animated scan line
   const scanLine = useRef(new Animated.Value(0)).current;
@@ -754,14 +548,11 @@ export default function LoginScreen() {
       await login({ email: identifier, password });
       navigation.reset({ index: 0, routes: [{ name: "Main" }] });
     } catch (err) {
-      // ✅ FIX: err.status is always undefined from fetch/axios.
-      //         Resolve the status code from whichever shape your API client uses.
       const code = err.statusCode ?? err.status ?? err.response?.status;
 
       if (code === 401) {
         setErrors({ password: "Incorrect email or password." });
       } else if (!code || code === 0) {
-        // No response at all — network is down
         setErrors({
           general: "No internet connection. Check your network and try again.",
         });
@@ -770,7 +561,6 @@ export default function LoginScreen() {
           general: "Too many attempts. Please wait a moment and try again.",
         });
       } else {
-        // ✅ FIX: use a dedicated general slot so field errors stay clean
         setErrors({
           general: err.message || "Login failed. Please try again.",
         });
@@ -867,7 +657,7 @@ export default function LoginScreen() {
             </Text>
           </FadeSlide>
 
-          {/* ✅ General error banner — shown above fields, never steals a field slot */}
+          {/* General error banner */}
           {errors.general && <ErrorBanner message={errors.general} />}
 
           {/* Fields */}
@@ -898,12 +688,12 @@ export default function LoginScreen() {
             />
           </View>
 
-          {/* Forgot password */}
+          {/* Forgot password — navigates directly to ForgotPassword screen */}
           <FadeSlide
             delay={470}
             style={{ alignItems: "flex-end", marginBottom: 20 }}
           >
-            <TouchableOpacity onPress={() => setShowForgot(true)}>
+            <TouchableOpacity onPress={() => navigation.navigate("ForgotPassword")}>
               <Text style={{ color: C.gold, fontSize: 13, fontWeight: "600" }}>
                 Forgot password?
               </Text>
@@ -943,12 +733,6 @@ export default function LoginScreen() {
           <View style={{ height: 50 }} />
         </ScrollView>
       </KeyboardAvoidingView>
-
-      {/* Forgot password sheet — outside ScrollView so it overlays everything */}
-      <ForgotPasswordSheet
-        visible={showForgot}
-        onClose={() => setShowForgot(false)}
-      />
     </AfricanBG>
   );
 }

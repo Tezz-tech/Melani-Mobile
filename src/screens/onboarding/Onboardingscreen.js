@@ -59,7 +59,7 @@ const SLIDES = [
     accent: '#C8860A',
     tag: 'YOUR JOURNEY',
     title: 'Track Your\nSkin Story',
-    body: 'Scan today, compare next month. Watch your routine work in real time. Melanin Scan grows with you — a companion, not just a scanner.',
+    body: 'Scan today, compare next month. Watch your routine work in real time. Melani Scan grows with you — a companion, not just a scanner.',
     decorShape: 'circle',
   },
 ];

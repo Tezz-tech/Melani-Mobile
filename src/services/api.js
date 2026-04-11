@@ -129,10 +129,17 @@ export const AuthAPI = {
   async forgotPassword(email) {
     return request('POST', '/auth/forgot-password', { email });
   },
+  async resetPasswordWithOTP(email, otp, newPassword) {
+    return request('POST', '/auth/reset-password-otp', { email, otp, newPassword });
+  },
   async resetPassword(token, password) {
-    // ✅ FIX: backend registers this as POST, not PATCH
-    // authroutes.js: router.post('/reset-password/:token', auth.resetPassword)
     return request('POST', `/auth/reset-password/${token}`, { password });
+  },
+  async sendVerificationOTP(email) {
+    return request('POST', '/auth/send-verification-otp', { email });
+  },
+  async verifyEmailOTP(email, otp) {
+    return request('POST', '/auth/verify-email-otp', { email, otp });
   },
   async isAuthenticated() {
     try {

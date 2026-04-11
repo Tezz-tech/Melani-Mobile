@@ -519,6 +519,48 @@ const sb = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────
+//  Morning scan recommendation banner
+//  Shown in the morning window (05:00–11:59) when the user
+//  hasn't scanned today yet.
+// ─────────────────────────────────────────────────────────────
+function MorningScanBanner() {
+  const hour = new Date().getHours();
+  const isMorning = hour >= 5 && hour < 12;
+  if (!isMorning) return null;
+
+  return (
+    <FadeSlide delay={160} style={{ marginBottom: 16 }}>
+      <View style={msb.wrap}>
+        <View style={msb.iconWrap}>
+          <Text style={{ fontSize: 22 }}>☀</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={msb.title}>Best time to scan</Text>
+          <Text style={msb.body}>
+            Morning scans give the most accurate results — your skin is rested, oil-free, and at its natural baseline.
+          </Text>
+        </View>
+      </View>
+    </FadeSlide>
+  );
+}
+const msb = StyleSheet.create({
+  wrap: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 12,
+    backgroundColor: 'rgba(200,134,10,0.07)',
+    borderWidth: 1, borderColor: 'rgba(200,134,10,0.28)',
+    borderRadius: 14, padding: 14, marginBottom: 0,
+  },
+  iconWrap: {
+    width: 38, height: 38, borderRadius: 10,
+    backgroundColor: 'rgba(200,134,10,0.14)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  title: { color: '#C8860A', fontSize: 13, fontWeight: '700', marginBottom: 3 },
+  body:  { color: 'rgba(245,222,179,0.60)', fontSize: 12, lineHeight: 17 },
+});
+
+// ─────────────────────────────────────────────────────────────
 //  Skin status card  ← latestScan from API
 //  Shows empty state before first scan, full data after
 // ─────────────────────────────────────────────────────────────
@@ -1182,6 +1224,9 @@ export default function HomeScreen() {
 
         {/* ── Streak banner — real streak ── */}
         <StreakBanner streak={streakDays} />
+
+        {/* ── Morning scan recommendation ── */}
+        <MorningScanBanner />
 
         {/* ── Scan orb — intercept free users over quota ── */}
         <FadeSlide delay={250}>

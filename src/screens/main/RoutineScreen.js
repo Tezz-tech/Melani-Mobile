@@ -176,6 +176,36 @@ function applyDailyReset(routine, completionDates) {
   return result;
 }
 
+// ── Build "why this step matters" explanation ─────────────────
+function buildWhyThisStep(stepName) {
+  const key = (stepName || '').toLowerCase().trim();
+
+  const reasons = {
+    cleanse:          'Cleansing removes dirt, sweat, excess oil and pollutants that settle on your skin throughout the day. Skipping this step means everything else sits on top of debris and barely absorbs.',
+    'double cleanse': 'The first cleanse dissolves sunscreen and makeup; the second cleanse actually cleans your pores. One cleanse alone cannot do both jobs — this is especially important for melanin skin prone to clogged pores and dark spots.',
+    tone:             'Toners restore your skin\'s pH after cleansing and prep the skin to absorb serums more efficiently. For melanin skin, balancing pH also reduces the risk of post-inflammatory hyperpigmentation.',
+    toner:            'Toners restore your skin\'s pH after cleansing and prep the skin to absorb serums more efficiently. For melanin skin, balancing pH also reduces the risk of post-inflammatory hyperpigmentation.',
+    essence:          'Essences deliver a concentrated dose of hydration and actives right after toning, while your skin is still damp. They significantly boost the effectiveness of every product layered on top.',
+    serum:            'Serums carry the highest concentration of active ingredients — niacinamide, vitamin C, retinol — that target your specific concerns. This is where most of the real skin transformation happens.',
+    treatment:        'Treatments address your primary concern directly — whether that\'s dark spots, acne, or uneven texture. Consistent use builds up results over weeks, so daily application is key.',
+    'eye cream':      'The skin around the eye is 5× thinner than the rest of your face and has fewer oil glands. It needs its own dedicated hydration and treatment to prevent dark circles, puffiness, and fine lines.',
+    moisturise:       'Moisturiser seals in all the active products underneath and strengthens your skin barrier. A healthy barrier keeps irritants out and moisture in — crucial for preventing the ashy, dull look that affects melanin skin.',
+    moisturizer:      'Moisturiser seals in all the active products underneath and strengthens your skin barrier. A healthy barrier keeps irritants out and moisture in — crucial for preventing the ashy, dull look that affects melanin skin.',
+    moisturiser:      'Moisturiser seals in all the active products underneath and strengthens your skin barrier. A healthy barrier keeps irritants out and moisture in — crucial for preventing the ashy, dull look that affects melanin skin.',
+    spf:              'UV radiation triggers melanin overproduction, which is the root cause of hyperpigmentation on dark skin. SPF 30–50 every single morning — rain or shine — is the single most impactful thing you can do for your skin.',
+    sunscreen:        'UV radiation triggers melanin overproduction, which is the root cause of hyperpigmentation on dark skin. SPF 30–50 every single morning — rain or shine — is the single most impactful thing you can do for your skin.',
+    exfoliate:        'Exfoliation removes the build-up of dead skin cells that make melanin skin look dull and grey. It also allows serums and moisturisers to penetrate deeper. Limit to 2–3× per week to avoid triggering irritation or dark spots.',
+    oil:              'Facial oils mimic your skin\'s natural sebum and lock in moisture at the final layer. For melanin skin, oils rich in linoleic acid (rosehip, marula) specifically help fade dark spots and strengthen the barrier.',
+    mask:             'Masks deliver an intensive treatment in a concentrated session. Weekly masking targets specific concerns — hydration, detox, brightening — beyond what your daily routine can achieve alone.',
+  };
+
+  for (const [k, reason] of Object.entries(reasons)) {
+    if (key.includes(k) || k.includes(key)) return reason;
+  }
+
+  return 'This step supports your overall skin health by maintaining the balance and function of your skin barrier. Consistency is key — results build up over weeks of daily use.';
+}
+
 // ── Build how-to-use instructions ────────────────────────────
 function buildHowToUse(item) {
   const key = (item.step || "").toLowerCase();
@@ -568,8 +598,8 @@ function ProductCard({ product }) {
 const pc = StyleSheet.create({
   root:        { backgroundColor: 'rgba(200,134,10,0.06)', borderWidth: 1, borderColor: 'rgba(200,134,10,0.22)', borderRadius: 12, padding: 13, marginTop: 10 },
   header:      { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 6 },
-  brand:       { color: C.creamFaint, fontSize: 9, fontWeight: '700', letterSpacing: 1 },
-  name:        { color: C.cream, fontSize: 13, fontWeight: '800' },
+  brand:       { color: C.creamFaint, fontSize: 9, fontWeight: '700', letterSpacing: 1, flexShrink: 1 },
+  name:        { color: C.cream, fontSize: 13, fontWeight: '800', flexShrink: 1 },
   originBadge: { backgroundColor: 'rgba(93,190,138,0.14)', borderWidth: 1, borderColor: 'rgba(93,190,138,0.35)', borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1 },
   originText:  { color: '#5DBE8A', fontSize: 9, fontWeight: '700' },
   price:       { color: C.gold, fontSize: 13, fontWeight: '900', flexShrink: 0 },
@@ -704,7 +734,7 @@ function StepCard({ item, isAM, index, completed, onToggle, saving }) {
                       <Text style={sc.instrText}>{step}</Text>
                     </View>
                   ))}
-                  {item.notes ? <View style={sc.whyBox}><Text style={sc.whyLabel}>💡  WHY THIS STEP</Text><Text style={sc.why}>{item.notes}</Text></View> : null}
+                  <View style={sc.whyBox}><Text style={sc.whyLabel}>💡  WHY THIS STEP</Text><Text style={sc.why}>{buildWhyThisStep(item.step)}</Text></View>
                   {stepProducts.length > 0 && (
                     <View style={{ marginTop: 12 }}>
                       <View style={sc.sectionHeader}><View style={sc.sectionBar} /><Text style={sc.sectionTitle}>RECOMMENDED PRODUCTS</Text></View>
@@ -738,12 +768,10 @@ function StepCard({ item, isAM, index, completed, onToggle, saving }) {
                   </View>
                 ))}
 
-                {item.notes ? (
-                  <View style={sc.whyBox}>
-                    <Text style={sc.whyLabel}>💡  WHY THIS STEP</Text>
-                    <Text style={sc.why}>{item.notes}</Text>
-                  </View>
-                ) : null}
+                <View style={sc.whyBox}>
+                  <Text style={sc.whyLabel}>💡  WHY THIS STEP</Text>
+                  <Text style={sc.why}>{buildWhyThisStep(item.step)}</Text>
+                </View>
 
                 {stepProducts.length > 0 && (
                   <View style={{ marginTop: 12 }}>

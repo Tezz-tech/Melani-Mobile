@@ -284,18 +284,7 @@ export default function PrivacyScreen() {
           <DataMeter label="Routine history"     used={7}   total={365}  unit="days"   color={C.warn}    delay={960} />
         </FadeSlide>
 
-        {/* Your rights */}
-        <SectionLabel text="Your Rights" delay={1020} />
-        <ActionRow icon="↓"  label="Download My Data"      sublabel="Export all data as a ZIP file"              onPress={()=>{}}  delay={1050} />
-        <ActionRow icon="◎"  label="View Stored Scans"     sublabel="See exactly what images we hold"            onPress={()=>{}}  delay={1090} />
-        <ActionRow icon="✕"  label="Delete All Scan Data"  sublabel="Remove images while keeping your account"  onPress={()=>{}} danger delay={1130} />
-
-        {/* Policies */}
-        <SectionLabel text="Policies & Legal" delay={1180} />
-        <ActionRow icon="📄" label="Privacy Policy"         sublabel="How we handle your personal data"  onPress={()=>{}} external delay={1210} />
-        <ActionRow icon="📋" label="Terms of Service"       sublabel="Your agreement with Melanin Scan"  onPress={()=>{}} external delay={1250} />
-        <ActionRow icon="🍪" label="Cookie Policy"          sublabel="Cookies and tracking technologies"  onPress={()=>{}} external delay={1290} />
-
+       
         {/* NDPR notice */}
         <FadeSlide delay={1340} style={s.ndprCard}>
           <Text style={s.ndprIcon}>🇳🇬</Text>

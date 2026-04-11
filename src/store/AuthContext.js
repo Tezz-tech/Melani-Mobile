@@ -45,12 +45,20 @@ function reducer(state, action) {
       };
 
     case 'COMPLETE_ONBOARDING':
-      // ✅ Called from ProfileSetupScreen when onboarding is done.
-      // Moves pendingUser → user, flips isAuthenticated → navigator
-      // swaps to authenticated stack automatically. No navigate() needed.
       return {
         ...state,
         user:            state.pendingUser,
+        pendingUser:     null,
+        isAuthenticated: true,
+        error:           null,
+      };
+
+    case 'COMPLETE_ONBOARDING_WITH_USER':
+      // Fallback: pendingUser was null (app backgrounded during onboarding),
+      // so we pass the stored user explicitly from TokenStorage.
+      return {
+        ...state,
+        user:            action.user,
         pendingUser:     null,
         isAuthenticated: true,
         error:           null,
@@ -146,12 +154,25 @@ export function AuthProvider({ children }) {
   // ✅ Call this from the last onboarding screen (ProfileSetupScreen)
   // when the user taps your final CTA. Do NOT call navigation.navigate()
   // after this — the navigator swap is automatic.
-  const completeOnboarding = () => {
-    dispatch({ type: 'COMPLETE_ONBOARDING' });
+  const completeOnboarding = async () => {
+    // pendingUser is set by REGISTER_SUCCESS. In rare cases (app backgrounded
+    // between signup and onboarding completion) it may be null. Fall back to
+    // the user persisted in AsyncStorage so the session is never lost.
+    if (!state.pendingUser) {
+      const storedUser = await TokenStorage.getUser();
+      dispatch({ type: 'COMPLETE_ONBOARDING_WITH_USER', user: storedUser });
+    } else {
+      dispatch({ type: 'COMPLETE_ONBOARDING' });
+    }
   };
 
   const logout = async () => {
-    await AuthAPI.logout();
+    try {
+      await AuthAPI.logout();
+    } catch {
+      // Token may be expired — tokens are cleared by AuthAPI.logout's finally block.
+      // We must still dispatch LOGOUT so isAuthenticated flips false.
+    }
     dispatch({ type: 'LOGOUT' });
   };
 
