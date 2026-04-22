@@ -140,7 +140,8 @@ export default function ForgotPasswordScreen() {
                 </Text>
               </FadeSlide>
 
-              <FadeSlide delay={240} style={s.form}>
+              {/* Plain View — FadeSlide with useNativeDriver blocks TextInput touches during animation */}
+              <View style={s.form}>
                 <Text style={s.label}>Email Address</Text>
                 <TextInput
                   style={[s.input, error && s.inputError]}
@@ -159,7 +160,7 @@ export default function ForgotPasswordScreen() {
                   <View style={s.ctaShimmer} />
                   {loading ? <ActivityIndicator size="small" color="#0F0500" /> : <Text style={s.ctaLabel}>Send Reset Code</Text>}
                 </TouchableOpacity>
-              </FadeSlide>
+              </View>
             </>
           )}
 
@@ -175,7 +176,7 @@ export default function ForgotPasswordScreen() {
                 </Text>
               </FadeSlide>
 
-              <FadeSlide delay={120} style={s.form}>
+              <View style={s.form}>
                 <Text style={s.label}>6-Digit Reset Code</Text>
                 <TextInput
                   style={[s.input, s.otpInput, error && s.inputError]}
@@ -196,7 +197,7 @@ export default function ForgotPasswordScreen() {
                 <TouchableOpacity style={{ marginTop: 16, alignItems: 'center' }} onPress={handleSend}>
                   <Text style={{ color: C.creamDim, fontSize: 13, textDecorationLine: 'underline' }}>Resend code</Text>
                 </TouchableOpacity>
-              </FadeSlide>
+              </View>
             </>
           )}
 
@@ -210,7 +211,7 @@ export default function ForgotPasswordScreen() {
                 </Text>
               </FadeSlide>
 
-              <FadeSlide delay={120} style={s.form}>
+              <View style={s.form}>
                 <Text style={s.label}>New Password</Text>
                 <View style={s.passWrap}>
                   <TextInput
@@ -233,7 +234,7 @@ export default function ForgotPasswordScreen() {
                   <View style={s.ctaShimmer} />
                   {loading ? <ActivityIndicator size="small" color="#0F0500" /> : <Text style={s.ctaLabel}>Reset Password</Text>}
                 </TouchableOpacity>
-              </FadeSlide>
+              </View>
             </>
           )}
 

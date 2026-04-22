@@ -9,6 +9,7 @@ import {
   StatusBar,
   ScrollView,
   Dimensions,
+  ActivityIndicator,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "../../store/AuthContext";
@@ -71,7 +72,7 @@ function FadeSlide({ delay = 0, from = 20, children, style }) {
 }
 
 // ── Gold button ───────────────────────────────────────────────
-function GoldButton({ label, onPress, disabled }) {
+function GoldButton({ label, onPress, disabled, loading }) {
   const scale = useRef(new Animated.Value(1)).current;
   return (
     <Animated.View style={{ transform: [{ scale }], opacity: disabled ? 0.45 : 1 }}>
@@ -79,12 +80,15 @@ function GoldButton({ label, onPress, disabled }) {
         style={gb.root}
         onPress={onPress}
         activeOpacity={1}
-        disabled={disabled}
+        disabled={disabled || loading}
         onPressIn={() => Animated.spring(scale, { toValue: 0.96, useNativeDriver: true }).start()}
         onPressOut={() => Animated.spring(scale, { toValue: 1,    useNativeDriver: true }).start()}
       >
         <View style={gb.shimmer} />
-        <Text style={gb.label}>{label}</Text>
+        {loading
+          ? <ActivityIndicator size="small" color="#0F0500" />
+          : <Text style={gb.label}>{label}</Text>
+        }
       </TouchableOpacity>
     </Animated.View>
   );
@@ -264,11 +268,12 @@ export default function ProfileSetupScreen() {
   const navigation = useNavigation();
   const { completeOnboarding } = useAuth();
 
-  const [step,     setStep]     = useState(0);
-  const [ageRange, setAgeRange] = useState("");
-  const [gender,   setGender]   = useState("");
-  const [concerns, setConcerns] = useState([]);
-  const [goals,    setGoals]    = useState([]);
+  const [step,      setStep]      = useState(0);
+  const [ageRange,  setAgeRange]  = useState("");
+  const [gender,    setGender]    = useState("");
+  const [concerns,  setConcerns]  = useState([]);
+  const [goals,     setGoals]     = useState([]);
+  const [finishing, setFinishing] = useState(false);
 
   // Whether the current step has a valid selection
   const canNext = () => {
@@ -279,30 +284,35 @@ export default function ProfileSetupScreen() {
     return true;
   };
 
-  // ── Navigate to Home, clearing the stack ─────────────────
-  const goHome = () =>
-    navigation.reset({ index: 0, routes: [{ name: "Main" }] });
-
   // ── Continue / Start My Journey ───────────────────────────
-  const handleNext = () => {
-    if (step < 3) {
-      setStep((s) => s + 1);
-      return;
+  // On the final step, await completeOnboarding() so isAuthenticated
+  // flips true and the navigator automatically swaps to the main stack.
+  // Do NOT call navigation.reset() — the swap is driven by AuthContext.
+  const handleNext = async () => {
+    if (step < 3) { setStep((s) => s + 1); return; }
+    if (finishing) return;
+    setFinishing(true);
+    try {
+      await completeOnboarding();
+    } catch {
+      // Retry once — pendingUser may have been null on first attempt
+      try { await completeOnboarding(); } catch { /* give up gracefully */ }
+    } finally {
+      setFinishing(false);
     }
-    // Fire-and-forget completeOnboarding — do NOT await it
-    // so a slow/broken API can never block navigation
-    if (typeof completeOnboarding === "function") {
-      completeOnboarding().catch(() => {});
-    }
-    goHome();
   };
 
   // ── Skip ─────────────────────────────────────────────────
-  const handleSkip = () => {
-    if (typeof completeOnboarding === "function") {
-      completeOnboarding().catch(() => {});
+  const handleSkip = async () => {
+    if (finishing) return;
+    setFinishing(true);
+    try {
+      await completeOnboarding();
+    } catch {
+      try { await completeOnboarding(); } catch { /* give up gracefully */ }
+    } finally {
+      setFinishing(false);
     }
-    goHome();
   };
 
   // ── Slide-in animation per step ───────────────────────────
@@ -418,15 +428,16 @@ export default function ProfileSetupScreen() {
       {/* Bottom action bar */}
       <View style={s.bottomBar}>
         {step < 3 && (
-          <TouchableOpacity onPress={handleSkip} style={s.skipBtn}>
-            <Text style={s.skipText}>Skip for now</Text>
+          <TouchableOpacity onPress={handleSkip} style={s.skipBtn} disabled={finishing}>
+            <Text style={[s.skipText, finishing && { opacity: 0.4 }]}>Skip for now</Text>
           </TouchableOpacity>
         )}
         <View style={{ flex: 1, marginLeft: step < 3 ? 14 : 0 }}>
           <GoldButton
             label={step < 3 ? "Continue" : "Start My Journey"}
             onPress={handleNext}
-            disabled={!canNext()}
+            disabled={!canNext() || finishing}
+            loading={finishing && step === 3}
           />
         </View>
       </View>

@@ -1209,6 +1209,11 @@ export default function RoutineScreen() {
       if (!routine?._id) return;
       const timeOfDay = activeTab === "AM" ? "morning" : "night";
 
+      // Synthetic steps (created from latestScan.products, not saved in the DB)
+      // have no routine record — skip the API call to avoid a 404.
+      const stepExistsInDB = (routine[timeOfDay] ?? []).some(s => s.order === order);
+      if (!stepExistsInDB) return;
+
       // Optimistic update
       setRoutine((prev) => {
         if (!prev) return prev;
@@ -1247,9 +1252,89 @@ export default function RoutineScreen() {
   );
 
   // ── Derived state ─────────────────────────────────────────
-  const activeSteps = routine
+  // Build active steps by merging:
+  //   1. routine.morning/night  — provides completion state (checked/unchecked)
+  //   2. latestScan.products    — source of truth for ALL recommended products
+  //
+  // Why: routine.matchedProducts may have been saved with only 3 fallbacks if
+  // the Gemini product call failed at scan time. But latestScan.products always
+  // reflects the current recommended set. Merging guarantees all products appear.
+  const rawSteps = routine
     ? activeTab === "AM" ? (routine.morning ?? []) : (routine.night ?? [])
     : [];
+
+  const activeSteps = React.useMemo(() => {
+    const scanProducts = latestScan?.products;
+    if (!Array.isArray(scanProducts) || !scanProducts.length) return rawSteps;
+
+    const timeOfDay = activeTab === "AM" ? "morning" : "night";
+
+    // Filter scan products relevant to this time slot
+    const slotProducts = scanProducts.filter(p => {
+      const slot = (p.routineSlot || 'both').toLowerCase();
+      return slot === timeOfDay || slot === 'both';
+    });
+    if (!slotProducts.length) return rawSteps;
+
+    // Build a mutable copy of existing steps, indexed by normalised step name
+    const result = rawSteps.map(s => ({ ...s }));
+    const stepIndex = new Map(
+      result.map((s, i) => [(s.step || '').toLowerCase().trim(), i])
+    );
+
+    // Step-name priority order for sorting
+    const STEP_ORDER = [
+      'cleanse','double cleanse','tone','toner','essence',
+      'serum','vitamin c','treatment','eye cream',
+      'moisturise','moisturizer','moisturiser',
+      'night cream','oil','spf','sunscreen','mask','exfoliant','exfoliate',
+    ];
+    const stepRank = (name) => {
+      const n = (name || '').toLowerCase().trim();
+      const idx = STEP_ORDER.findIndex(s => n === s || n.includes(s) || s.includes(n));
+      return idx === -1 ? 99 : idx;
+    };
+
+    let nextOrder = result.length + 1;
+
+    for (const p of slotProducts) {
+      const pStep = (p.productStep || '').toLowerCase().trim();
+      if (!pStep) continue;
+
+      if (stepIndex.has(pStep)) {
+        // Step exists — ensure product is in matchedProducts
+        const idx  = stepIndex.get(pStep);
+        const step = result[idx];
+        const existing = Array.isArray(step.matchedProducts) ? step.matchedProducts : [];
+        const alreadyIn = existing.some(
+          mp => (mp.name || '').toLowerCase() === (p.name || '').toLowerCase()
+        );
+        if (!alreadyIn) {
+          result[idx] = { ...step, matchedProducts: [...existing, p] };
+        }
+      } else {
+        // Step missing from routine — create a synthetic step from the product.
+        // _isSynthetic: true marks it as not in the DB so toggleStep skips the API call.
+        result.push({
+          order:          nextOrder++,
+          step:           p.productStep || p.category || 'Skincare',
+          productType:    p.category || '',
+          keyIngredient:  (p.keyIngredients || [])[0] || '',
+          notes:          p.amountToUse || p.frequency || '',
+          durationSeconds: 30,
+          completed:      false,
+          matchedProducts: [p],
+          _isSynthetic:   true,
+        });
+        stepIndex.set(pStep, result.length - 1);
+      }
+    }
+
+    // Re-sort by canonical routine order, re-number orders
+    return result
+      .sort((a, b) => stepRank(a.step) - stepRank(b.step))
+      .map((s, i) => ({ ...s, order: i + 1 }));
+  }, [rawSteps, latestScan?.products, activeTab]);
   const doneCount = activeSteps.filter((s) => s.completed).length;
   const allDone   = activeSteps.length > 0 && doneCount === activeSteps.length;
 
@@ -1495,7 +1580,7 @@ export default function RoutineScreen() {
                   isAM={activeTab === "AM"}
                   index={i}
                   completed={!!item.completed}
-                  onToggle={inCooldown ? () => {} : () => toggleStep(item.order)}
+                  onToggle={inCooldown || item._isSynthetic ? () => {} : () => toggleStep(item.order)}
                   saving={savingStep === item.order}
                 />
               ))
