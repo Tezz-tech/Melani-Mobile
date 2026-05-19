@@ -237,6 +237,7 @@ export default function ScanCameraScreen() {
       const photo = await camRef.current.takePictureAsync({
         quality: 0.82, base64: true, exif: false,
         skipProcessing: Platform.OS === 'android',
+        shutterSound: false,
       });
       if (!photo?.base64) throw new Error('Camera returned no base64 data');
       setPhase('captured');
